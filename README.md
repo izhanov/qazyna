@@ -52,6 +52,14 @@ Search by meaning:
 ./bin/qazyna search "how to set up ollama"
 ```
 
+The database remembers which embedding model built it and refuses to mix
+vectors from different models. After changing `--embed-model`, rebuild from
+scratch:
+
+```sh
+./bin/qazyna reindex ./notes
+```
+
 ### Flags
 
 | Flag | Default | Description |

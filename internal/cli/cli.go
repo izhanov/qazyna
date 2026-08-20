@@ -57,6 +57,12 @@ func Run(args []string, opts ...Option) error {
 				Action:    app.indexAction,
 			},
 			{
+				Name:      "reindex",
+				Usage:     "wipe the database and index from scratch (required after changing the embedding model)",
+				ArgsUsage: "<path>",
+				Action:    app.reindexAction,
+			},
+			{
 				Name:      "search",
 				Usage:     "search the index",
 				ArgsUsage: "<query>",
@@ -88,10 +94,21 @@ type fileResult struct {
 	chunks []parser.Chunk
 }
 
+// metaEmbedderKey stores the Embedder.ID the database was built with.
+const metaEmbedderKey = "embedder"
+
 func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
+	return a.runIndex(ctx, cmd, false)
+}
+
+func (a *App) reindexAction(ctx context.Context, cmd *cli.Command) error {
+	return a.runIndex(ctx, cmd, true)
+}
+
+func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error {
 	root := cmd.Args().First()
 	if root == "" {
-		return fmt.Errorf("usage: qazyna index <path>")
+		return fmt.Errorf("usage: qazyna %s <path>", cmd.Name)
 	}
 
 	cfg := newConfig(cmd)
@@ -103,6 +120,15 @@ func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 
 	emb, err := a.newEmbedder(cfg)
 	if err != nil {
+		return err
+	}
+
+	if reset {
+		if err := st.Reset(ctx); err != nil {
+			return err
+		}
+	}
+	if err := checkEmbedderMeta(ctx, st, emb.ID()); err != nil {
 		return err
 	}
 
@@ -155,6 +181,28 @@ func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	fmt.Printf("%d chunks indexed, %d in the database\n", total, stored)
 	return nil
+}
+
+// checkEmbedderMeta refuses to mix vectors of different embedders in one
+// database: even with equal dimensions they are incomparable. A fresh
+// database gets stamped with the current embedder ID.
+func checkEmbedderMeta(ctx context.Context, st store.Store, embedderID string) error {
+	meta, err := st.Meta(ctx)
+	if err != nil {
+		return err
+	}
+	switch stored := meta[metaEmbedderKey]; stored {
+	case embedderID:
+		return nil
+	case "":
+		meta[metaEmbedderKey] = embedderID
+		return st.SetMeta(ctx, meta)
+	default:
+		return fmt.Errorf(
+			"database is indexed with embedder %q, current is %q; run `qazyna reindex <path>` to rebuild",
+			stored, embedderID,
+		)
+	}
 }
 
 // indexFile runs the full pipeline for one file: parse → embed → store.

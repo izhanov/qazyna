@@ -108,6 +108,75 @@ func TestLanceEmptyStore(t *testing.T) {
 	}
 }
 
+func TestLanceMetaRoundtrip(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	meta, err := st.Meta(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta) != 0 {
+		t.Fatalf("fresh store meta = %v, want empty", meta)
+	}
+
+	if err := st.SetMeta(ctx, map[string]string{"embedder": "ollama/bge-m3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMeta(ctx, map[string]string{"embedder": "fake/32"}); err != nil {
+		t.Fatal(err) // second write replaces, not appends
+	}
+
+	meta, err = st.Meta(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta) != 1 || meta["embedder"] != "fake/32" {
+		t.Errorf("meta = %v, want {embedder: fake/32}", meta)
+	}
+}
+
+func TestLanceResetAllowsNewDimension(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if err := st.AddDocument(ctx, doc("a.md", "one")); err != nil { // dim 4
+		t.Fatal(err)
+	}
+	if err := st.SetMeta(ctx, map[string]string{"embedder": "fake/4"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := st.Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("Count after reset = %d, want 0", n)
+	}
+	meta, err := st.Meta(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta) != 0 {
+		t.Errorf("meta after reset = %v, want empty", meta)
+	}
+
+	// A different vector dimension must be accepted after a reset.
+	other := Document{
+		Path:    "b.md",
+		Chunks:  []parser.Chunk{{Text: "x"}},
+		Vectors: [][]float32{{1, 2}}, // dim 2 instead of 4
+	}
+	if err := st.AddDocument(ctx, other); err != nil {
+		t.Fatalf("AddDocument with new dimension after reset: %v", err)
+	}
+}
+
 func TestLanceVectorDimensionMismatch(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

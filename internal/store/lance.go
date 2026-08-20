@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -14,7 +15,10 @@ import (
 	"github.com/lancedb/lancedb-go/pkg/lancedb"
 )
 
-const tableName = "chunks"
+const (
+	tableName     = "chunks"
+	metaTableName = "meta"
+)
 
 type Lance struct {
 	conn contracts.IConnection
@@ -98,6 +102,104 @@ func (l *Lance) Count(ctx context.Context) (int64, error) {
 		return 0, nil
 	}
 	return l.table.Count(ctx)
+}
+
+func (l *Lance) Meta(ctx context.Context) (map[string]string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	ok, err := l.hasTable(ctx, metaTableName)
+	if err != nil || !ok {
+		return map[string]string{}, err
+	}
+
+	t, err := l.conn.OpenTable(ctx, metaTableName)
+	if err != nil {
+		return nil, err
+	}
+	defer t.Close()
+
+	rows, err := t.Select(ctx, contracts.QueryConfig{Columns: []string{"key", "value"}})
+	if err != nil {
+		return nil, err
+	}
+	meta := make(map[string]string, len(rows))
+	for _, row := range rows {
+		meta[fmt.Sprint(row["key"])] = fmt.Sprint(row["value"])
+	}
+	return meta, nil
+}
+
+// SetMeta replaces the whole metadata table; it is tiny and written rarely.
+func (l *Lance) SetMeta(ctx context.Context, meta map[string]string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if err := l.dropTable(ctx, metaTableName); err != nil {
+		return err
+	}
+
+	schema, err := lancedb.NewSchemaBuilder().
+		AddStringField("key", false).
+		AddStringField("value", false).
+		Build()
+	if err != nil {
+		return err
+	}
+	t, err := l.conn.CreateTable(ctx, metaTableName, schema)
+	if err != nil {
+		return err
+	}
+	defer t.Close()
+
+	arrowSchema := arrow.NewSchema([]arrow.Field{
+		{Name: "key", Type: arrow.BinaryTypes.String},
+		{Name: "value", Type: arrow.BinaryTypes.String},
+	}, nil)
+	b := array.NewRecordBuilder(memory.DefaultAllocator, arrowSchema)
+	defer b.Release()
+	for _, k := range slices.Sorted(maps.Keys(meta)) {
+		b.Field(0).(*array.StringBuilder).Append(k)
+		b.Field(1).(*array.StringBuilder).Append(meta[k])
+	}
+	rec := b.NewRecord()
+	defer rec.Release()
+
+	return t.AddRecords(ctx, []arrow.Record{rec}, nil)
+}
+
+func (l *Lance) Reset(ctx context.Context) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.table != nil {
+		l.table.Close()
+		l.table = nil
+	}
+	l.dim = 0
+
+	if err := l.dropTable(ctx, tableName); err != nil {
+		return err
+	}
+	return l.dropTable(ctx, metaTableName)
+}
+
+// hasTable reports whether a table exists; must hold l.mu.
+func (l *Lance) hasTable(ctx context.Context, name string) (bool, error) {
+	names, err := l.conn.TableNames(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(names, name), nil
+}
+
+// dropTable removes a table if it exists; must hold l.mu.
+func (l *Lance) dropTable(ctx context.Context, name string) error {
+	ok, err := l.hasTable(ctx, name)
+	if err != nil || !ok {
+		return err
+	}
+	return l.conn.DropTable(ctx, name)
 }
 
 func (l *Lance) Close() error {

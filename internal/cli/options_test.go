@@ -86,8 +86,8 @@ func TestWithEmbedder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Dimensions() <= 0 {
-		t.Errorf("Dimensions() = %d, want > 0", e.Dimensions())
+	if e.ID() == "" {
+		t.Error("embedder ID is empty")
 	}
 }
 

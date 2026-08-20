@@ -2,6 +2,7 @@ package embed
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"math"
 )
@@ -13,7 +14,7 @@ type Fake struct {
 	Dim int
 }
 
-func (f Fake) Dimensions() int { return f.Dim }
+func (f Fake) ID() string { return fmt.Sprintf("fake/%d", f.Dim) }
 
 func (f Fake) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	vectors := make([][]float32, len(texts))

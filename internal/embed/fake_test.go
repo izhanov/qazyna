@@ -46,11 +46,14 @@ func TestFakeDistinctTexts(t *testing.T) {
 	}
 }
 
+func TestFakeID(t *testing.T) {
+	if got := (Fake{Dim: 32}).ID(); got != "fake/32" {
+		t.Errorf("ID() = %q, want %q", got, "fake/32")
+	}
+}
+
 func TestFakeDimensionsAndNorm(t *testing.T) {
 	f := Fake{Dim: 16}
-	if f.Dimensions() != 16 {
-		t.Fatalf("Dimensions() = %d, want 16", f.Dimensions())
-	}
 
 	vecs, err := f.Embed(context.Background(), []string{"hello"})
 	if err != nil {

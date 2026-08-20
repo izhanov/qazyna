@@ -21,5 +21,14 @@ type Store interface {
 	AddDocument(ctx context.Context, doc Document) error
 	DeleteByPath(ctx context.Context, path string) error
 	Count(ctx context.Context) (int64, error)
+
+	// Meta returns database-level metadata, e.g. which embedder built the
+	// index. Empty map for a fresh database.
+	Meta(ctx context.Context) (map[string]string, error)
+	SetMeta(ctx context.Context, meta map[string]string) error
+
+	// Reset wipes all indexed data and metadata.
+	Reset(ctx context.Context) error
+
 	Close() error
 }

@@ -31,9 +31,11 @@ func (failParser) Parse(_ context.Context, _ string) ([]parser.Chunk, error) {
 }
 
 type fakeStore struct {
-	mu     sync.Mutex
-	closed bool
-	docs   []store.Document
+	mu       sync.Mutex
+	closed   bool
+	docs     []store.Document
+	meta     map[string]string
+	resetted bool
 }
 
 func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
@@ -53,6 +55,31 @@ func (f *fakeStore) Count(_ context.Context) (int64, error) {
 		n += int64(len(d.Chunks))
 	}
 	return n, nil
+}
+
+func (f *fakeStore) Meta(_ context.Context) (map[string]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.meta == nil {
+		return map[string]string{}, nil
+	}
+	return f.meta, nil
+}
+
+func (f *fakeStore) SetMeta(_ context.Context, meta map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.meta = meta
+	return nil
+}
+
+func (f *fakeStore) Reset(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.docs = nil
+	f.meta = nil
+	f.resetted = true
+	return nil
 }
 
 func (f *fakeStore) Close() error {
@@ -154,6 +181,75 @@ func TestRunIndexNoSupportedFiles(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "no supported files") {
 		t.Fatalf("err = %v, want no supported files error", err)
+	}
+}
+
+func TestRunIndexStampsEmbedderMeta(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	var got *config.Config
+	st := &fakeStore{}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.meta["embedder"] != "fake/32" {
+		t.Errorf(`meta["embedder"] = %q, want "fake/32"`, st.meta["embedder"])
+	}
+}
+
+func TestRunIndexRefusesForeignEmbedder(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	var got *config.Config
+	st := &fakeStore{meta: map[string]string{"embedder": "ollama/bge-m3"}}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err == nil || !strings.Contains(err.Error(), "reindex") {
+		t.Fatalf("err = %v, want embedder mismatch error suggesting reindex", err)
+	}
+	if len(st.docs) != 0 {
+		t.Errorf("stored %d documents into a foreign-embedder database", len(st.docs))
+	}
+}
+
+func TestRunReindexResetsForeignDatabase(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	var got *config.Config
+	st := &fakeStore{
+		meta: map[string]string{"embedder": "ollama/bge-m3"},
+		docs: []store.Document{{Path: "stale.md"}},
+	}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "reindex", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.resetted {
+		t.Error("reindex did not reset the store")
+	}
+	if st.meta["embedder"] != "fake/32" {
+		t.Errorf(`meta["embedder"] = %q, want "fake/32"`, st.meta["embedder"])
+	}
+	if len(st.docs) != 1 || st.docs[0].Path == "stale.md" {
+		t.Errorf("stale documents survived reindex: %+v", st.docs)
 	}
 }
 
