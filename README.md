@@ -71,6 +71,17 @@ words) lookup run concurrently and are fused with Reciprocal Rank Fusion, so
 both question-like queries and grep-style keyword lookups work. `--mode
 vector` or `--mode text` selects a single half.
 
+### MCP server (search from AI agents)
+
+`qazyna mcp` serves the index over the Model Context Protocol (stdio), so
+agents like Claude Code can search your files themselves. Read-only by
+design: two tools, `search_notes` and `index_status`; indexing stays with
+you in the terminal. To register in Claude Code:
+
+```sh
+claude mcp add qazyna -- qazyna mcp
+```
+
 The database remembers which embedding model built it and refuses to mix
 vectors from different models. After changing `--embed-model`, rebuild from
 scratch:
@@ -118,5 +129,5 @@ internal/store/   Store interface + LanceDB implementation
 - [x] PDF parser (text layer via `pdftotext`; scanned PDFs need OCR, later)
 - [x] XML parser (subtree chunks, tag names become sections and labels)
 - [x] CSV/TSV parser (rows with headers woven in, packed up to chunk size)
-- [ ] HTTP API
+- [x] MCP server (`qazyna mcp`): read-only search for AI agents over stdio
 - [ ] Images (OCR/captioning), video

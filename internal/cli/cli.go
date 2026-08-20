@@ -23,7 +23,10 @@ import (
 
 	"qazyna/internal/config"
 	"qazyna/internal/embed"
+	"qazyna/internal/mcpserver"
+	"qazyna/internal/mcpserver/tools"
 	"qazyna/internal/parser"
+	"qazyna/internal/search"
 	"qazyna/internal/store"
 )
 
@@ -75,6 +78,11 @@ func Run(args []string, opts ...Option) error {
 				Action:    app.reindexAction,
 			},
 			{
+				Name:   "mcp",
+				Usage:  "serve the index to AI agents over MCP (stdio)",
+				Action: app.mcpAction,
+			},
+			{
 				Name:  "flush",
 				Usage: "remove all indexed data from the database",
 				Flags: []cli.Flag{
@@ -119,9 +127,6 @@ type fileResult struct {
 	chunks []parser.Chunk
 	err    error
 }
-
-// metaEmbedderKey stores the Embedder.ID the database was built with.
-const metaEmbedderKey = "embedder"
 
 // setupLogging routes diagnostics to stderr; stdout stays clean for the
 // actual output (search results, progress lines) so piping keeps working.
@@ -254,11 +259,11 @@ func checkEmbedderMeta(ctx context.Context, st store.Store, embedderID string) e
 	if err != nil {
 		return err
 	}
-	switch stored := meta[metaEmbedderKey]; stored {
+	switch stored := meta[search.MetaEmbedderKey]; stored {
 	case embedderID:
 		return nil
 	case "":
-		meta[metaEmbedderKey] = embedderID
+		meta[search.MetaEmbedderKey] = embedderID
 		return st.SetMeta(ctx, meta)
 	default:
 		return fmt.Errorf(
@@ -345,6 +350,27 @@ func (a *App) collectFiles(roots ...string) ([]string, error) {
 	return files, nil
 }
 
+func (a *App) mcpAction(ctx context.Context, cmd *cli.Command) error {
+	setupLogging(cmd)
+
+	cfg := newConfig(cmd)
+	st, err := a.openStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	emb, err := a.newEmbedder(cfg)
+	if err != nil {
+		return err
+	}
+
+	return mcpserver.Run(ctx,
+		tools.SearchNotes(st, emb),
+		tools.IndexStatus(st),
+	)
+}
+
 func (a *App) flushAction(ctx context.Context, cmd *cli.Command) error {
 	setupLogging(cmd)
 
@@ -404,12 +430,6 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("usage: qazyna search <query>")
 	}
 	mode := cmd.String("mode")
-	switch mode {
-	case "hybrid", "vector", "text":
-	default:
-		return fmt.Errorf("unknown mode %q (want hybrid, vector or text)", mode)
-	}
-	limit := cmd.Int("limit")
 
 	cfg := newConfig(cmd)
 	st, err := a.openStore(ctx, cfg)
@@ -418,64 +438,23 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer st.Close()
 
-	meta, err := st.Meta(ctx)
+	// ModeText works without an embedder (and on a foreign-model database),
+	// so only resolve one when the mode actually needs vectors.
+	var emb embed.Embedder
+	if mode != search.ModeText {
+		if emb, err = a.newEmbedder(cfg); err != nil {
+			return err
+		}
+	}
+
+	results, err := search.Search(ctx, st, emb, query, search.Options{
+		Mode:  mode,
+		Limit: cmd.Int("limit"),
+	})
 	if err != nil {
 		return err
 	}
-	if meta[metaEmbedderKey] == "" {
-		return fmt.Errorf("database is empty; run `qazyna index <path>` first")
-	}
-
-	// Both halves of a hybrid search run concurrently: embedding the query
-	// dominates the latency, the full-text lookup rides along for free.
-	fetch := limit
-	if mode == "hybrid" {
-		fetch = limit * 3 // give the fusion room to work with
-	}
-	var vecResults, textResults []store.SearchResult
-	g, gctx := errgroup.WithContext(ctx)
-	if mode != "text" {
-		emb, err := a.newEmbedder(cfg)
-		if err != nil {
-			return err
-		}
-		// Searching with a different model than the one that built the
-		// index would silently return garbage — refuse, same as index does.
-		if stored := meta[metaEmbedderKey]; stored != emb.ID() {
-			return fmt.Errorf("database is indexed with embedder %q, current is %q", stored, emb.ID())
-		}
-		g.Go(func() error {
-			vectors, err := emb.Embed(gctx, []string{query})
-			if err != nil {
-				return err
-			}
-			embed.Normalize(vectors)
-			vecResults, err = st.Search(gctx, vectors[0], fetch)
-			return err
-		})
-	}
-	if mode != "vector" {
-		g.Go(func() error {
-			var err error
-			textResults, err = st.SearchText(gctx, query, fetch)
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	var results []store.SearchResult
-	switch mode {
-	case "vector":
-		results = vecResults
-	case "text":
-		results = textResults
-	default:
-		results = rrfMerge(vecResults, textResults, limit)
-	}
-	slog.Debug("search done", "mode", mode,
-		"semantic", len(vecResults), "lexical", len(textResults), "results", len(results),
+	slog.Debug("search done", "mode", mode, "results", len(results),
 		"took", time.Since(start).Round(time.Millisecond))
 
 	if cmd.Bool("json") {
@@ -488,51 +467,6 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	printResults(results)
 	return nil
-}
-
-// rrfMerge fuses two ranked lists via Reciprocal Rank Fusion: each result
-// earns 1/(k+rank) from every list it appears in, so agreement between the
-// semantic and lexical halves beats a high position in either one alone.
-// Scores are scaled so that a #1 hit in both lists gives exactly 1.
-func rrfMerge(a, b []store.SearchResult, limit int) []store.SearchResult {
-	const k = 60
-
-	type entry struct {
-		result store.SearchResult
-		score  float64
-	}
-	byID := map[string]*entry{}
-	add := func(list []store.SearchResult) {
-		for rank, r := range list {
-			id := fmt.Sprintf("%s#%d", r.Path, r.Ordinal)
-			e, ok := byID[id]
-			if !ok {
-				e = &entry{result: r}
-				byID[id] = e
-			}
-			e.score += 1 / float64(k+rank+1)
-		}
-	}
-	add(a)
-	add(b)
-
-	merged := slices.Collect(maps.Values(byID))
-	slices.SortFunc(merged, func(x, y *entry) int {
-		if x.score != y.score {
-			if x.score > y.score {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(x.result.Path, y.result.Path)
-	})
-
-	results := make([]store.SearchResult, 0, min(limit, len(merged)))
-	for _, e := range merged[:min(limit, len(merged))] {
-		e.result.Score = e.score / (2.0 / (k + 1)) // both-#1 → 1.0, single-#1 → 0.5
-		results = append(results, e.result)
-	}
-	return results
 }
 
 func printResults(results []store.SearchResult) {
