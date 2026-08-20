@@ -1,0 +1,5 @@
+bin/
+data/
+lib/
+include/
+.DS_Store
