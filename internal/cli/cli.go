@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -64,9 +65,13 @@ func Run(args []string, opts ...Option) error {
 			},
 			{
 				Name:      "search",
-				Usage:     "search the index",
+				Usage:     "search the index by meaning",
 				ArgsUsage: "<query>",
-				Action:    app.searchAction,
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "limit", Value: 5, Usage: "maximum number of results"},
+					&cli.BoolFlag{Name: "json", Usage: "machine-readable output"},
+				},
+				Action: app.searchAction,
 			},
 		},
 	}
@@ -225,6 +230,7 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	if err != nil {
 		return nil, fmt.Errorf("embed %s: %w", path, err)
 	}
+	embed.Normalize(vectors)
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -276,5 +282,68 @@ func (a *App) collectFiles(roots ...string) ([]string, error) {
 }
 
 func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
-	return fmt.Errorf("not implemented yet")
+	query := strings.TrimSpace(strings.Join(cmd.Args().Slice(), " "))
+	if query == "" {
+		return fmt.Errorf("usage: qazyna search <query>")
+	}
+
+	cfg := newConfig(cmd)
+	st, err := a.openStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	emb, err := a.newEmbedder(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Searching with a different model than the one that built the index
+	// would silently return garbage — refuse, same as index does.
+	meta, err := st.Meta(ctx)
+	if err != nil {
+		return err
+	}
+	switch stored := meta[metaEmbedderKey]; stored {
+	case "":
+		return fmt.Errorf("database is empty; run `qazyna index <path>` first")
+	case emb.ID():
+	default:
+		return fmt.Errorf("database is indexed with embedder %q, current is %q", stored, emb.ID())
+	}
+
+	vectors, err := emb.Embed(ctx, []string{query})
+	if err != nil {
+		return err
+	}
+	embed.Normalize(vectors)
+
+	results, err := st.Search(ctx, vectors[0], cmd.Int("limit"))
+	if err != nil {
+		return err
+	}
+
+	if cmd.Bool("json") {
+		return json.NewEncoder(os.Stdout).Encode(results)
+	}
+	if len(results) == 0 {
+		fmt.Println("nothing found")
+		return nil
+	}
+	for i, r := range results {
+		fmt.Printf("%d. %s · %s · %.2f\n", i+1, r.Path, r.Section, r.Score)
+		fmt.Printf("   %s\n", snippet(r.Text, 200))
+	}
+	return nil
+}
+
+// snippet flattens text to a single line of at most maxRunes runes.
+func snippet(text string, maxRunes int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes]) + "…"
 }

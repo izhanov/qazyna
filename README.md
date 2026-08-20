@@ -96,6 +96,6 @@ internal/store/   Store interface + LanceDB implementation
 - [x] Markdown parser (chunks by headings/paragraphs)
 - [x] Embeddings via Ollama
 - [x] `index`: parse → embed → write to LanceDB
-- [ ] `search`: vector search
+- [x] `search`: vector search (`--limit`, `--json`)
 - [ ] HTTP API
 - [ ] PDF, XML, CSV, images, video

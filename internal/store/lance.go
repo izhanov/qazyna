@@ -104,6 +104,51 @@ func (l *Lance) Count(ctx context.Context) (int64, error) {
 	return l.table.Count(ctx)
 }
 
+func (l *Lance) Search(ctx context.Context, vector []float32, limit int) ([]SearchResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.table == nil {
+		return nil, nil
+	}
+
+	rows, err := l.table.VectorSearch(ctx, "vector", vector, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]SearchResult, 0, len(rows))
+	for _, row := range rows {
+		r := SearchResult{
+			Path:    fmt.Sprint(row["path"]),
+			Section: fmt.Sprint(row["section"]),
+			Text:    fmt.Sprint(row["text"]),
+		}
+		id := fmt.Sprint(row["id"])
+		if i := strings.LastIndex(id, "#"); i >= 0 {
+			fmt.Sscanf(id[i+1:], "%d", &r.Ordinal) //nolint:errcheck // 0 on failure is fine
+		}
+		// For unit vectors LanceDB's L2 _distance d relates to cosine
+		// similarity as cos = 1 - d/2 (d is squared euclidean distance).
+		if d, ok := toFloat(row["_distance"]); ok {
+			r.Score = 1 - d/2
+		}
+		results = append(results, r)
+	}
+	return results, nil
+}
+
+func toFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	default:
+		return 0, false
+	}
+}
+
 func (l *Lance) Meta(ctx context.Context) (map[string]string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

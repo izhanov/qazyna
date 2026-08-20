@@ -36,6 +36,18 @@ type fakeStore struct {
 	docs     []store.Document
 	meta     map[string]string
 	resetted bool
+
+	searchVec     []float32
+	searchLimit   int
+	searchResults []store.SearchResult
+}
+
+func (f *fakeStore) Search(_ context.Context, vec []float32, limit int) ([]store.SearchResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.searchVec = vec
+	f.searchLimit = limit
+	return f.searchResults, nil
 }
 
 func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
@@ -284,10 +296,66 @@ func TestRunIndexPropagatesParseError(t *testing.T) {
 	}
 }
 
-func TestRunSearchNotImplemented(t *testing.T) {
-	err := Run([]string{"qazyna", "search", "query"})
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("err = %v, want not implemented error", err)
+func TestRunSearchRequiresQuery(t *testing.T) {
+	err := Run([]string{"qazyna", "search"})
+	if err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("err = %v, want usage error", err)
+	}
+}
+
+func TestRunSearchEmptyDatabase(t *testing.T) {
+	var got *config.Config
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "anything"},
+		WithFakeEmbedder(),
+		withFakeStore(&got, &fakeStore{}),
+	)
+	if err == nil || !strings.Contains(err.Error(), "database is empty") {
+		t.Fatalf("err = %v, want empty database error", err)
+	}
+}
+
+func TestRunSearchEmbedderMismatch(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{meta: map[string]string{"embedder": "ollama/bge-m3"}}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "anything"},
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err == nil || !strings.Contains(err.Error(), `indexed with embedder "ollama/bge-m3"`) {
+		t.Fatalf("err = %v, want embedder mismatch error", err)
+	}
+}
+
+func TestRunSearch(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{
+		meta: map[string]string{"embedder": "fake/32"},
+		searchResults: []store.SearchResult{
+			{Path: "a.md", Section: "S", Text: "hello", Score: 0.9},
+		},
+	}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "--limit", "3", "привет", "мир"},
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.searchLimit != 3 {
+		t.Errorf("search limit = %d, want 3", st.searchLimit)
+	}
+	if len(st.searchVec) != 32 {
+		t.Errorf("query vector length = %d, want 32", len(st.searchVec))
+	}
+	var norm float64
+	for _, x := range st.searchVec {
+		norm += float64(x) * float64(x)
+	}
+	if norm < 0.99 || norm > 1.01 {
+		t.Errorf("query vector norm² = %f, want ~1", norm)
 	}
 }
 

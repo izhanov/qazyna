@@ -108,6 +108,58 @@ func TestLanceEmptyStore(t *testing.T) {
 	}
 }
 
+func TestLanceSearch(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	add := func(path, text string, vec []float32) {
+		t.Helper()
+		err := st.AddDocument(ctx, Document{
+			Path:    path,
+			Chunks:  []parser.Chunk{{Text: text, Section: "s", Ordinal: 7}},
+			Vectors: [][]float32{vec},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("a.md", "alpha", []float32{1, 0, 0, 0})
+	add("b.md", "beta", []float32{0, 1, 0, 0}) // orthogonal to the query
+
+	results, err := st.Search(ctx, []float32{1, 0, 0, 0}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2: %+v", len(results), results)
+	}
+
+	best := results[0]
+	if best.Path != "a.md" || best.Text != "alpha" || best.Section != "s" || best.Ordinal != 7 {
+		t.Errorf("best result = %+v", best)
+	}
+	// Identical unit vectors → cosine 1; orthogonal → cosine 0. This pins
+	// down the _distance→cosine conversion, not just the ordering.
+	if best.Score < 0.99 || best.Score > 1.01 {
+		t.Errorf("best score = %f, want ~1", best.Score)
+	}
+	if s := results[1].Score; s < -0.05 || s > 0.05 {
+		t.Errorf("orthogonal score = %f, want ~0", s)
+	}
+}
+
+func TestLanceSearchEmptyStore(t *testing.T) {
+	st := openTestStore(t)
+
+	results, err := st.Search(context.Background(), []float32{1, 0}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("got %d results from empty store, want 0", len(results))
+	}
+}
+
 func TestLanceMetaRoundtrip(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

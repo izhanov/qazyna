@@ -46,6 +46,18 @@ func TestFakeDistinctTexts(t *testing.T) {
 	}
 }
 
+func TestNormalize(t *testing.T) {
+	vecs := [][]float32{{3, 4}, {0, 0}}
+	Normalize(vecs)
+
+	if vecs[0][0] != 0.6 || vecs[0][1] != 0.8 {
+		t.Errorf("normalized = %v, want [0.6 0.8]", vecs[0])
+	}
+	if vecs[1][0] != 0 || vecs[1][1] != 0 {
+		t.Errorf("zero vector changed: %v", vecs[1])
+	}
+}
+
 func TestFakeID(t *testing.T) {
 	if got := (Fake{Dim: 32}).ID(); got != "fake/32" {
 		t.Errorf("ID() = %q, want %q", got, "fake/32")
