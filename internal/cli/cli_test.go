@@ -445,6 +445,40 @@ func TestCollectFilesDeduplicatesOverlappingRoots(t *testing.T) {
 	}
 }
 
+func TestPrettyPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if got := prettyPath(filepath.Join(home, "notes", "a.md")); got != "~/notes/a.md" {
+		t.Errorf("home path = %q, want ~/notes/a.md", got)
+	}
+	if got := prettyPath("/somewhere/else/a.md"); got != "/somewhere/else/a.md" {
+		t.Errorf("foreign path = %q, want unchanged", got)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prettyPath(filepath.Join(cwd, "sub", "b.md")); got != filepath.Join("sub", "b.md") {
+		t.Errorf("cwd path = %q, want sub/b.md", got)
+	}
+}
+
+func TestSnippet(t *testing.T) {
+	if got := snippet("a\nb\n\n  c", 100); got != "a b c" {
+		t.Errorf("snippet = %q, want %q", got, "a b c")
+	}
+	long := strings.Repeat("ы", 250)
+	got := snippet(long, 200)
+	if n := len([]rune(got)); n != 201 { // 200 runes + ellipsis
+		t.Errorf("snippet length = %d runes, want 201", n)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Error("long snippet is not ellipsized")
+	}
+}
+
 func TestCollectFilesSingleFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.md")

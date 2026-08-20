@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -325,17 +326,72 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.Bool("json") {
-		return json.NewEncoder(os.Stdout).Encode(results)
+		for i := range results {
+			results[i].Score = math.Round(results[i].Score*10000) / 10000
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(results)
 	}
+	printResults(results)
+	return nil
+}
+
+func printResults(results []store.SearchResult) {
 	if len(results) == 0 {
 		fmt.Println("nothing found")
-		return nil
+		return
 	}
+
+	color := colorsEnabled()
 	for i, r := range results {
-		fmt.Printf("%d. %s · %s · %.2f\n", i+1, r.Path, r.Section, r.Score)
-		fmt.Printf("   %s\n", snippet(r.Text, 200))
+		score := fmt.Sprintf("%.2f", r.Score)
+		switch {
+		case r.Score >= 0.7:
+			score = paint(color, "32", score) // green
+		case r.Score >= 0.5:
+			score = paint(color, "33", score) // yellow
+		default:
+			score = paint(color, "90", score) // gray
+		}
+
+		fmt.Printf("%-2d %s  %s\n", i+1, score, paint(color, "1", prettyPath(r.Path)))
+		if r.Section != "" {
+			fmt.Printf("         %s\n", paint(color, "2", r.Section))
+		}
+		fmt.Printf("         %s\n\n", snippet(r.Text, 200))
 	}
-	return nil
+}
+
+// prettyPath makes a stored path easier to read: relative to the current
+// directory when inside it, otherwise with the home directory as ~.
+func prettyPath(path string) string {
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+			return "~" + string(filepath.Separator) + rest
+		}
+	}
+	return path
+}
+
+func colorsEnabled() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+func paint(enabled bool, code, s string) string {
+	if !enabled {
+		return s
+	}
+	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
 // snippet flattens text to a single line of at most maxRunes runes.
