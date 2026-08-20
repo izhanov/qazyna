@@ -45,12 +45,18 @@ func logging(next mcp.MethodHandler) mcp.MethodHandler {
 		result, err := next(ctx, method, req)
 
 		attrs := []any{"method", method, "took", time.Since(start).Round(time.Millisecond)}
-		if ctr, ok := req.(*mcp.CallToolRequest); ok {
+		ctr, isToolCall := req.(*mcp.CallToolRequest)
+		if isToolCall {
 			attrs = append(attrs, "tool", ctr.Params.Name)
 		}
-		if err != nil {
+		switch {
+		case err != nil:
 			slog.Error("mcp call failed", append(attrs, "error", err)...)
-		} else {
+		case isToolCall:
+			// Tool calls are the events that matter — always visible.
+			slog.Info("tool called", attrs...)
+		default:
+			// Protocol chatter (initialize, ping, notifications).
 			slog.Debug("mcp call", attrs...)
 		}
 		return result, err
