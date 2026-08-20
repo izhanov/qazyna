@@ -291,7 +291,7 @@ func TestRunIndexUnknownEmbedder(t *testing.T) {
 	}
 }
 
-func TestRunIndexPropagatesParseError(t *testing.T) {
+func TestRunIndexReportsFailedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.bad"), "whatever")
 
@@ -302,8 +302,31 @@ func TestRunIndexPropagatesParseError(t *testing.T) {
 		WithFakeEmbedder(),
 		withFakeStore(&got, &fakeStore{}),
 	)
-	if err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Fatalf("err = %v, want parse error", err)
+	if err == nil || !strings.Contains(err.Error(), "1 of 1 files failed") {
+		t.Fatalf("err = %v, want failure summary", err)
+	}
+}
+
+// One broken file must not stop the rest of the corpus from being indexed.
+func TestRunIndexContinuesAfterFailedFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "good.md"), "# ok\n\nhello\n")
+	writeFile(t, filepath.Join(dir, "broken.bad"), "whatever")
+
+	var got *config.Config
+	st := &fakeStore{}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithParser(failParser{}),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 files failed") {
+		t.Fatalf("err = %v, want partial failure summary", err)
+	}
+	if len(st.docs) != 1 || !strings.HasSuffix(st.docs[0].Path, "good.md") {
+		t.Errorf("healthy file was not indexed: %+v", st.docs)
 	}
 }
 

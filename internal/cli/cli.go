@@ -8,10 +8,12 @@ import (
 	"maps"
 	"math"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -36,6 +38,11 @@ type App struct {
 type Option func(*App) error
 
 func Run(args []string, opts ...Option) error {
+	// Ctrl-C / SIGTERM cancel the context, which reaches every worker,
+	// Ollama request and pdftotext subprocess instead of killing mid-write.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	app := &App{
 		stores:    map[string]storeFactory{},
 		embedders: map[string]embedderFactory{},
@@ -77,7 +84,7 @@ func Run(args []string, opts ...Option) error {
 			},
 		},
 	}
-	return cmd.Run(context.Background(), args)
+	return cmd.Run(ctx, args)
 }
 
 func (a *App) openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
@@ -99,6 +106,7 @@ func (a *App) newEmbedder(cfg *config.Config) (embed.Embedder, error) {
 type fileResult struct {
 	path   string
 	chunks []parser.Chunk
+	err    error
 }
 
 // metaEmbedderKey stores the Embedder.ID the database was built with.
@@ -158,11 +166,11 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		for _, path := range files {
 			g.Go(func() error {
 				chunks, err := a.indexFile(ctx, path, emb, st)
-				if err != nil {
-					return err
+				if err != nil && ctx.Err() != nil {
+					return ctx.Err() // shutting down, not a file problem
 				}
 				select {
-				case results <- fileResult{path: path, chunks: chunks}:
+				case results <- fileResult{path: path, chunks: chunks, err: err}:
 					return nil
 				case <-ctx.Done():
 					return ctx.Err()
@@ -173,8 +181,15 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		close(results)
 	}()
 
-	total := 0
+	// One broken file must not abort the run: failures are reported and
+	// counted, the rest of the corpus still gets indexed.
+	total, failed := 0, 0
 	for r := range results {
+		if r.err != nil {
+			failed++
+			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", r.path, r.err)
+			continue
+		}
 		fmt.Printf("  %s — %d chunks indexed\n", r.path, len(r.chunks))
 		total += len(r.chunks)
 	}
@@ -187,6 +202,9 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		return err
 	}
 	fmt.Printf("%d chunks indexed, %d in the database\n", total, stored)
+	if failed > 0 {
+		return fmt.Errorf("%d of %d files failed to index", failed, len(files))
+	}
 	return nil
 }
 

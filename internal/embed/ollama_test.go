@@ -7,14 +7,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeOllama spins up an httptest server pretending to be Ollama.
+// Retries are near-instant so tests stay fast.
 func fakeOllama(t *testing.T, handler http.HandlerFunc) *Ollama {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return NewOllama(srv.URL, "bge-m3")
+	o := NewOllama(srv.URL, "bge-m3")
+	o.backoff = time.Millisecond
+	return o
 }
 
 func TestOllamaEmbed(t *testing.T) {
@@ -47,8 +51,10 @@ func TestOllamaEmbed(t *testing.T) {
 	}
 }
 
-func TestOllamaEmbedServerError(t *testing.T) {
+func TestOllamaEmbedClientErrorNotRetried(t *testing.T) {
+	attempts := 0
 	o := fakeOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": `model "bge-m3" not found`})
 	})
@@ -56,6 +62,64 @@ func TestOllamaEmbedServerError(t *testing.T) {
 	_, err := o.Embed(context.Background(), []string{"x"})
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("err = %v, want server error message surfaced", err)
+	}
+	if attempts != 1 {
+		t.Errorf("4xx retried %d times, unknown model will not appear on retry", attempts)
+	}
+}
+
+func TestOllamaEmbedRetriesServerErrors(t *testing.T) {
+	attempts := 0
+	o := fakeOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "hiccup"})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"embeddings": [][]float32{{0.1}}})
+	})
+
+	vecs, err := o.Embed(context.Background(), []string{"x"})
+	if err != nil {
+		t.Fatalf("expected success after retries, got %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+	if len(vecs) != 1 {
+		t.Errorf("vecs = %v", vecs)
+	}
+}
+
+func TestOllamaEmbedGivesUpAfterMaxAttempts(t *testing.T) {
+	attempts := 0
+	o := fakeOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "still down"})
+	})
+
+	_, err := o.Embed(context.Background(), []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "after 3 attempts") {
+		t.Fatalf("err = %v, want attempts exhausted error", err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestOllamaEmbedRespectsCancellation(t *testing.T) {
+	o := fakeOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "down"})
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := o.Embed(ctx, []string{"x"})
+	if err == nil {
+		t.Fatal("expected an error with a cancelled context")
 	}
 }
 
@@ -74,6 +138,7 @@ func TestOllamaEmbedCountMismatch(t *testing.T) {
 
 func TestOllamaEmbedConnectionRefused(t *testing.T) {
 	o := NewOllama("http://127.0.0.1:1", "bge-m3") // nothing listens there
+	o.backoff = time.Millisecond
 
 	_, err := o.Embed(context.Background(), []string{"x"})
 	if err == nil || !strings.Contains(err.Error(), "ollama serve") {
