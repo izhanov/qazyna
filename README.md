@@ -44,7 +44,10 @@ make install
 The database lives in `~/.local/share/qazyna/db.lance` by default
 (`$XDG_DATA_HOME` is honored), so every directory shares one index. Every
 flag has an env twin: `QAZYNA_DB`, `QAZYNA_STORE`, `QAZYNA_EMBEDDER`,
-`QAZYNA_OLLAMA_URL`, `QAZYNA_EMBED_MODEL`. The CGO flags for linking the native library
+`QAZYNA_OLLAMA_URL`, `QAZYNA_EMBED_MODEL`, `QAZYNA_FRESH_READS`.
+Reads re-open the table by default so long-lived processes (the MCP server)
+see new indexing without a restart; `--fresh-reads=false` pins the version
+that was current at startup. The CGO flags for linking the native library
 are declared in `internal/store/cgo_flags.go` (via `#cgo` directives with
 `${SRCDIR}`-relative paths), so plain `go build ./...` and `go test ./...` work
 without any environment variables — as long as the native libraries are

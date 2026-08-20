@@ -60,7 +60,7 @@ func WithDefaultParsers() Option {
 // WithDefaultStore registers the LanceDB store backend.
 func WithDefaultStore() Option {
 	return WithStore("lance", func(ctx context.Context, cfg *config.Config) (store.Store, error) {
-		return store.OpenLance(ctx, cfg.DBPath)
+		return store.OpenLance(ctx, cfg.DBPath, store.WithFreshReads(cfg.FreshReads))
 	})
 }
 
@@ -78,6 +78,9 @@ func flags() []cli.Flag {
 			Sources: cli.EnvVars("QAZYNA_OLLAMA_URL")},
 		&cli.StringFlag{Name: "embed-model", Value: "bge-m3", Usage: "Ollama embedding model",
 			Sources: cli.EnvVars("QAZYNA_EMBED_MODEL")},
+		&cli.BoolFlag{Name: "fresh-reads", Value: true,
+			Usage:   "re-open the table on every read to see writes from other processes",
+			Sources: cli.EnvVars("QAZYNA_FRESH_READS")},
 	}
 }
 
@@ -88,5 +91,6 @@ func newConfig(cmd *cli.Command) *config.Config {
 		EmbedderName: cmd.String("embedder"),
 		OllamaURL:    cmd.String("ollama-url"),
 		EmbedModel:   cmd.String("embed-model"),
+		FreshReads:   cmd.Bool("fresh-reads"),
 	}
 }

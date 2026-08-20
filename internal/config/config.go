@@ -11,6 +11,7 @@ type Config struct {
 	EmbedderName string
 	OllamaURL    string
 	EmbedModel   string
+	FreshReads   bool
 }
 
 // DefaultDBPath returns the XDG data location for the database

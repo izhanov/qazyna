@@ -21,7 +21,8 @@ const (
 )
 
 type Lance struct {
-	conn contracts.IConnection
+	conn  contracts.IConnection
+	fresh bool
 
 	// Table writes go through CGO into the Rust core; serialize them to stay
 	// on the safe side while parsers run concurrently.
@@ -30,13 +31,26 @@ type Lance struct {
 	dim   int
 }
 
-func OpenLance(ctx context.Context, path string) (Store, error) {
+type LanceOption func(*Lance)
+
+// WithFreshReads controls whether every read re-opens the table handle to
+// pick up versions written by other processes (on by default). Without it
+// a long-lived process — the MCP server — keeps serving the table version
+// that was current when it started.
+func WithFreshReads(on bool) LanceOption {
+	return func(l *Lance) { l.fresh = on }
+}
+
+func OpenLance(ctx context.Context, path string, opts ...LanceOption) (Store, error) {
 	conn, err := lancedb.Connect(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	l := &Lance{conn: conn}
+	l := &Lance{conn: conn, fresh: true}
+	for _, opt := range opts {
+		opt(l)
+	}
 
 	// Open the table if it already exists; otherwise it is created lazily on
 	// the first AddDocument, when the vector dimension is known.
@@ -98,6 +112,9 @@ func (l *Lance) Paths(ctx context.Context) (map[string]int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if err := l.refreshTable(ctx); err != nil {
+		return nil, err
+	}
 	if l.table == nil {
 		return map[string]int64{}, nil
 	}
@@ -132,6 +149,9 @@ func (l *Lance) Count(ctx context.Context) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if err := l.refreshTable(ctx); err != nil {
+		return 0, err
+	}
 	if l.table == nil {
 		return 0, nil
 	}
@@ -142,6 +162,9 @@ func (l *Lance) Search(ctx context.Context, vector []float32, limit int) ([]Sear
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if err := l.refreshTable(ctx); err != nil {
+		return nil, err
+	}
 	if l.table == nil {
 		return nil, nil
 	}
@@ -172,6 +195,9 @@ func (l *Lance) SearchText(ctx context.Context, query string, limit int) ([]Sear
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if err := l.refreshTable(ctx); err != nil {
+		return nil, err
+	}
 	if l.table == nil {
 		return nil, nil
 	}
@@ -345,6 +371,34 @@ func (l *Lance) Reset(ctx context.Context) error {
 		return err
 	}
 	return l.dropTable(ctx, metaTableName)
+}
+
+// refreshTable re-opens the table handle so reads see the latest table
+// version: a handle stays pinned to the version that was current when it
+// was opened, and the SDK has no checkout-latest yet. Also picks up a
+// table created by another process after this store was opened.
+// No-op unless fresh reads are enabled; must hold l.mu.
+func (l *Lance) refreshTable(ctx context.Context) error {
+	if !l.fresh {
+		return nil
+	}
+	ok, err := l.hasTable(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	if l.table != nil {
+		l.table.Close()
+		l.table = nil
+	}
+	if !ok {
+		return nil
+	}
+	table, err := l.conn.OpenTable(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	l.table = table
+	return nil
 }
 
 // hasTable reports whether a table exists; must hold l.mu.

@@ -109,6 +109,84 @@ func TestLanceEmptyStore(t *testing.T) {
 	}
 }
 
+// The MCP-server scenario: a long-lived reader opened before another
+// process wrote must still see the new data (a table handle is pinned to
+// the version current at open time, so reads re-open it).
+func TestLanceFreshReadsSeeOtherWriters(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "test.lance")
+
+	reader, err := OpenLance(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { reader.Close() })
+
+	writer, err := OpenLance(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.AddDocument(ctx, doc("a.md", "written after reader opened")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := reader.Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("Count = %d, want 1 (stale table handle?)", n)
+	}
+	res, err := reader.SearchText(ctx, "written", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 {
+		t.Errorf("SearchText found %d results, want 1", len(res))
+	}
+}
+
+// With fresh reads disabled the old behavior is kept: the handle stays
+// pinned and concurrent writers are invisible until reopen.
+func TestLanceStaleReadsWithFreshReadsOff(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "test.lance")
+
+	// The table must exist before the reader opens, otherwise the reader
+	// has no handle at all and sees nothing either way.
+	writer, err := OpenLance(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.AddDocument(ctx, doc("a.md", "first")); err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := OpenLance(ctx, path, WithFreshReads(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { reader.Close() })
+
+	if err := writer.AddDocument(ctx, doc("b.md", "second")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := reader.Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("Count = %d, want 1 (pinned handle must not see b.md)", n)
+	}
+}
+
 func TestLanceSearch(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
