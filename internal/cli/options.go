@@ -25,6 +25,13 @@ func WithEmbedder(name string, f embedderFactory) Option {
 	}
 }
 
+// WithDefaultEmbedder registers the Ollama embedding backend.
+func WithDefaultEmbedder() Option {
+	return WithEmbedder("ollama", func(cfg *config.Config) (embed.Embedder, error) {
+		return embed.NewOllama(cfg.OllamaURL, cfg.EmbedModel), nil
+	})
+}
+
 // WithFakeEmbedder registers a deterministic no-model embedder, useful for
 // tests and for running the pipeline without Ollama: --embedder fake.
 func WithFakeEmbedder() Option {
@@ -58,7 +65,7 @@ func flags() []cli.Flag {
 		&cli.StringFlag{Name: "db", Value: "data/qazyna.lance", Usage: "path to the database"},
 		&cli.StringFlag{Name: "embedder", Value: "ollama", Usage: "embedding backend"},
 		&cli.StringFlag{Name: "ollama-url", Value: "http://localhost:11434", Usage: "Ollama server URL"},
-		&cli.StringFlag{Name: "embed-model", Value: "nomic-embed-text", Usage: "Ollama embedding model"},
+		&cli.StringFlag{Name: "embed-model", Value: "bge-m3", Usage: "Ollama embedding model"},
 	}
 }
 

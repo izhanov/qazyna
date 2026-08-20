@@ -116,7 +116,7 @@ func TestNewConfigDefaults(t *testing.T) {
 		DBPath:       "data/qazyna.lance",
 		EmbedderName: "fake", // overridden by the flag
 		OllamaURL:    "http://localhost:11434",
-		EmbedModel:   "nomic-embed-text",
+		EmbedModel:   "bge-m3",
 	}
 	if *got != want {
 		t.Errorf("config = %+v, want %+v", *got, want)

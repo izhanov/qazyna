@@ -11,6 +11,7 @@ func main() {
 	err := cli.Run(os.Args,
 		cli.WithDefaultStore(),
 		cli.WithDefaultParsers(),
+		cli.WithDefaultEmbedder(),
 		cli.WithFakeEmbedder(),
 	)
 	if err != nil {

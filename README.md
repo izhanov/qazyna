@@ -12,11 +12,12 @@ Supported formats: Markdown (in progress). Planned: PDF, XML, CSV, JPEG, PNG, vi
 - Go 1.26+
 - macOS, Linux, or Windows (MinGW/Git Bash) — the `Makefile` detects the platform
   automatically, check it with `make platform-info`
-- [Ollama](https://ollama.com) with an embedding model (default: `nomic-embed-text`):
+- [Ollama](https://ollama.com) with an embedding model (default: `bge-m3` —
+  multilingual, works well for Cyrillic):
 
 ```sh
 brew install ollama
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ```
 
 ## Installation
@@ -68,7 +69,7 @@ scratch:
 | `--db` | `data/qazyna.lance` | path to the LanceDB database |
 | `--embedder` | `ollama` | embedding backend |
 | `--ollama-url` | `http://localhost:11434` | Ollama server URL |
-| `--embed-model` | `nomic-embed-text` | embedding model |
+| `--embed-model` | `bge-m3` | embedding model |
 
 ## Architecture
 
@@ -93,8 +94,8 @@ internal/store/   Store interface + LanceDB implementation
 
 - [x] CLI skeleton, LanceDB connection
 - [x] Markdown parser (chunks by headings/paragraphs)
-- [ ] Embeddings via Ollama
-- [x] `index`: parse → embed → write to LanceDB (with the fake embedder for now)
+- [x] Embeddings via Ollama
+- [x] `index`: parse → embed → write to LanceDB
 - [ ] `search`: vector search
 - [ ] HTTP API
 - [ ] PDF, XML, CSV, images, video
