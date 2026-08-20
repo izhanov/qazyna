@@ -193,6 +193,48 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		return fmt.Errorf("no supported files found in %s", strings.Join(roots, ", "))
 	}
 
+	known, err := st.Paths(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Incremental indexing: an unchanged mtime means the file is skipped
+	// entirely — no parsing and, above all, no embedding.
+	var work []string
+	skipped := 0
+	for _, path := range files {
+		if info, err := os.Stat(path); err == nil && known[path] == info.ModTime().Unix() {
+			skipped++
+			continue
+		}
+		work = append(work, path)
+	}
+
+	// Indexed files that vanished from the indexed directories are stale:
+	// drop their chunks so search stops returning ghosts. Paths outside the
+	// given roots are left alone — this run knows nothing about them.
+	removed := 0
+	onDisk := make(map[string]bool, len(files))
+	for _, f := range files {
+		onDisk[f] = true
+	}
+	for dbPath := range known {
+		if onDisk[dbPath] || !underAnyRoot(dbPath, roots) {
+			continue
+		}
+		if err := st.DeleteByPath(ctx, dbPath); err != nil {
+			return err
+		}
+		slog.Info("removed vanished file from index", "file", dbPath)
+		removed++
+	}
+
+	files = work
+	if len(files) == 0 {
+		fmt.Printf("nothing to do: %d files unchanged, %d stale removed\n", skipped, removed)
+		return nil
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
@@ -241,9 +283,14 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%d chunks indexed, %d in the database\n", total, stored)
+	fmt.Printf("%d chunks indexed, %d in the database", total, stored)
+	if skipped > 0 || removed > 0 {
+		fmt.Printf(" (%d unchanged skipped, %d stale removed)", skipped, removed)
+	}
+	fmt.Println()
 	slog.Info("done",
 		"files", len(files)-failed, "failed", failed, "chunks", total,
+		"skipped", skipped, "removed", removed,
 		"took", time.Since(start).Round(time.Millisecond))
 	if failed > 0 {
 		return fmt.Errorf("%d of %d files failed to index", failed, len(files))
@@ -316,6 +363,17 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	}
 	slog.Debug("stored", "file", path, "took", time.Since(t).Round(time.Millisecond))
 	return chunks, nil
+}
+
+// underAnyRoot reports whether path lies under (or is) one of the roots.
+func underAnyRoot(path string, roots []string) bool {
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // collectFiles returns the files under the given roots that have a registered

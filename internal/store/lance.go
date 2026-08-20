@@ -94,6 +94,40 @@ func (l *Lance) DeleteByPath(ctx context.Context, path string) error {
 	return l.table.Delete(ctx, pathFilter(path))
 }
 
+func (l *Lance) Paths(ctx context.Context) (map[string]int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.table == nil {
+		return map[string]int64{}, nil
+	}
+
+	rows, err := l.table.Select(ctx, contracts.QueryConfig{Columns: []string{"path", "mtime"}})
+	if err != nil {
+		return nil, err
+	}
+	paths := map[string]int64{}
+	for _, row := range rows {
+		if mt, ok := toInt64(row["mtime"]); ok {
+			paths[fmt.Sprint(row["path"])] = mt
+		}
+	}
+	return paths, nil
+}
+
+func toInt64(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, true
+	case int32:
+		return int64(x), true
+	case float64:
+		return int64(x), true
+	default:
+		return 0, false
+	}
+}
+
 func (l *Lance) Count(ctx context.Context) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

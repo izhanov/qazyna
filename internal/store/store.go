@@ -31,6 +31,10 @@ type Store interface {
 	DeleteByPath(ctx context.Context, path string) error
 	Count(ctx context.Context) (int64, error)
 
+	// Paths returns every indexed file with its stored mtime, enabling
+	// incremental indexing: unchanged files are skipped entirely.
+	Paths(ctx context.Context) (map[string]int64, error)
+
 	// Search returns the limit nearest chunks to the query vector,
 	// best match first. Vectors are expected to be unit-normalized.
 	Search(ctx context.Context, vector []float32, limit int) ([]SearchResult, error)

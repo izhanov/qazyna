@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"slices"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"qazyna/internal/config"
 	"qazyna/internal/parser"
@@ -37,6 +39,7 @@ type fakeStore struct {
 	docs     []store.Document
 	meta     map[string]string
 	resetted bool
+	deleted  []string
 
 	searchVec     []float32
 	searchLimit   int
@@ -69,7 +72,23 @@ func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
 	return nil
 }
 
-func (f *fakeStore) DeleteByPath(_ context.Context, _ string) error { return nil }
+func (f *fakeStore) DeleteByPath(_ context.Context, path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, path)
+	f.docs = slices.DeleteFunc(f.docs, func(d store.Document) bool { return d.Path == path })
+	return nil
+}
+
+func (f *fakeStore) Paths(_ context.Context) (map[string]int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	paths := map[string]int64{}
+	for _, d := range f.docs {
+		paths[d.Path] = d.MTime
+	}
+	return paths, nil
+}
 
 func (f *fakeStore) Count(_ context.Context) (int64, error) {
 	f.mu.Lock()
@@ -507,6 +526,104 @@ func TestRunFlushEmptyDatabase(t *testing.T) {
 	}
 	if st.resetted {
 		t.Error("empty database was reset needlessly")
+	}
+}
+
+// runIndexArgs runs `index dir` against st with the fake backends.
+func runIndexArgs(t *testing.T, st *fakeStore, dir string) error {
+	t.Helper()
+	var got *config.Config
+	return Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+}
+
+func TestRunIndexSkipsUnchangedFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	st := &fakeStore{}
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.docs) != 1 {
+		t.Fatalf("first run stored %d documents, want 1", len(st.docs))
+	}
+
+	// Second run: file untouched, must be skipped — no new AddDocument.
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.docs) != 1 {
+		t.Errorf("unchanged file was re-indexed: %d documents", len(st.docs))
+	}
+}
+
+func TestRunIndexReindexesChangedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	writeFile(t, path, "hello\n")
+
+	st := &fakeStore{}
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change content and push mtime into the future (writes within the
+	// same second would otherwise be invisible to a second-granular check).
+	writeFile(t, path, "changed\n")
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+	last := st.docs[len(st.docs)-1]
+	if last.Chunks[0].Text != "changed" {
+		t.Errorf("changed file was not re-indexed: %q", last.Chunks[0].Text)
+	}
+}
+
+func TestRunIndexRemovesVanishedFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "keep.md"), "keep\n")
+
+	st := &fakeStore{
+		docs: []store.Document{
+			{Path: filepath.Join(dir, "gone.md"), MTime: 1, Chunks: []parser.Chunk{{Text: "x"}}},
+			{Path: "/elsewhere/other.md", MTime: 1, Chunks: []parser.Chunk{{Text: "y"}}},
+		},
+		meta: map[string]string{"embedder": "fake/32"},
+	}
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Contains(st.deleted, filepath.Join(dir, "gone.md")) {
+		t.Error("vanished file under the root was not removed")
+	}
+	if slices.Contains(st.deleted, "/elsewhere/other.md") {
+		t.Error("file outside the indexed roots was removed")
+	}
+}
+
+func TestUnderAnyRoot(t *testing.T) {
+	roots := []string{"/a/b", "/c"}
+	for path, want := range map[string]bool{
+		"/a/b/x.md":  true,
+		"/a/b":       true,
+		"/a/bc/x.md": false, // prefix of the name, not of the directory
+		"/c/deep/y":  true,
+		"/d/z.md":    false,
+	} {
+		if got := underAnyRoot(path, roots); got != want {
+			t.Errorf("underAnyRoot(%q) = %v, want %v", path, got, want)
+		}
 	}
 }
 

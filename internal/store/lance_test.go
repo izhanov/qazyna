@@ -214,6 +214,37 @@ func TestLanceSearchEmptyStore(t *testing.T) {
 	}
 }
 
+func TestLancePaths(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	paths, err := st.Paths(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("fresh store paths = %v, want empty", paths)
+	}
+
+	if err := st.AddDocument(ctx, doc("a.md", "one", "two")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddDocument(ctx, doc("b.md", "three")); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err = st.Paths(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("paths = %v, want 2 entries (deduplicated per file)", paths)
+	}
+	if paths["a.md"] != 1700000000 || paths["b.md"] != 1700000000 {
+		t.Errorf("paths = %v, want stored mtimes", paths)
+	}
+}
+
 func TestLanceMetaRoundtrip(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
