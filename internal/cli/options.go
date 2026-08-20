@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"qazyna/internal/config"
+	"qazyna/internal/parser"
 	"qazyna/internal/store"
 )
 
@@ -14,6 +15,18 @@ func WithStore(name string, f storeFactory) Option {
 		a.stores[name] = f
 		return nil
 	}
+}
+
+func WithParser(p parser.Parser) Option {
+	return func(a *App) error {
+		a.parsers.Register(p)
+		return nil
+	}
+}
+
+// WithDefaultParsers registers a parser for every supported format.
+func WithDefaultParsers() Option {
+	return WithParser(parser.Markdown{})
 }
 
 // WithDefaultStore registers the LanceDB store backend.
