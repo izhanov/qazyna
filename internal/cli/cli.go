@@ -43,6 +43,9 @@ type App struct {
 
 type Option func(*App) error
 
+// version is stamped at build time via -ldflags "-X qazyna/internal/cli.version=...".
+var version = "dev"
+
 func Run(args []string, opts ...Option) error {
 	// Ctrl-C / SIGTERM cancel the context, which reaches every worker,
 	// Ollama request and pdftotext subprocess instead of killing mid-write.
@@ -61,9 +64,10 @@ func Run(args []string, opts ...Option) error {
 	}
 
 	cmd := &cli.Command{
-		Name:  "qazyna",
-		Usage: "semantic search over local files",
-		Flags: flags(),
+		Name:    "qazyna",
+		Usage:   "semantic search over local files",
+		Version: version,
+		Flags:   flags(),
 		Commands: []*cli.Command{
 			{
 				Name:      "index",

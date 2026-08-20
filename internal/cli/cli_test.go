@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"slices"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -63,7 +63,6 @@ func (f *fakeStore) SearchText(_ context.Context, query string, _ int) ([]store.
 	f.textQuery = query
 	return f.textResults, nil
 }
-
 
 func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
 	f.mu.Lock()

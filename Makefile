@@ -33,6 +33,9 @@ LIB_DIR := $(CURDIR)/lib/$(PLATFORM)_$(ARCH)
 LANCEDB_VERSION := v0.1.2
 LANCEDB_LIB     := $(LIB_DIR)/liblancedb_go.a
 
+VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GO_FLAGS := -ldflags "-X qazyna/internal/cli.version=$(VERSION)"
+
 .PHONY: build run test install clean deps clean-deps platform-info
 
 # Native LanceDB libraries: downloaded once, skipped if already present
@@ -42,16 +45,16 @@ $(LANCEDB_LIB):
 deps: $(LANCEDB_LIB)
 
 build: $(LANCEDB_LIB)
-	go build -o bin/$(BIN) ./cmd/qazyna
+	go build $(GO_FLAGS) -o bin/$(BIN) ./cmd/qazyna
 
 run: build
 	./bin/$(BIN) $(ARGS)
 
 test: $(LANCEDB_LIB)
-	go test ./...
+	go test -race ./...
 
 install: $(LANCEDB_LIB)
-	go install ./cmd/qazyna
+	go install $(GO_FLAGS) ./cmd/qazyna
 
 platform-info:
 	@echo "platform: $(PLATFORM)_$(ARCH)"
