@@ -32,14 +32,11 @@ make build
 Useful extra targets: `make deps` (download the native libraries only),
 `make clean-deps` (remove them, e.g. before a version bump).
 
-The binary lands in `bin/qazyna`. All required CGO flags are set in the `Makefile`;
-if you build directly with `go build`, export them yourself:
-
-```sh
-# example for macOS arm64; see `make platform-info` for your platform's values
-export CGO_CFLAGS="-I$(pwd)/include"
-export CGO_LDFLAGS="$(pwd)/lib/darwin_arm64/liblancedb_go.a -framework Security -framework CoreFoundation"
-```
+The binary lands in `bin/qazyna`. The CGO flags for linking the native library
+are declared in `internal/store/cgo_flags.go` (via `#cgo` directives with
+`${SRCDIR}`-relative paths), so plain `go build ./...` and `go test ./...` work
+without any environment variables — as long as the native libraries are
+downloaded (`make deps`).
 
 ## Usage
 
@@ -87,7 +84,7 @@ internal/store/   Store interface + LanceDB implementation
 ## Status
 
 - [x] CLI skeleton, LanceDB connection
-- [ ] Markdown parser (chunks by headings/paragraphs)
+- [x] Markdown parser (chunks by headings/paragraphs)
 - [ ] Embeddings via Ollama
 - [ ] `index`: parse → embed → write to LanceDB
 - [ ] `search`: vector search

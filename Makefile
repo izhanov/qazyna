@@ -12,31 +12,28 @@ else
 	$(error Unsupported architecture: $(UNAME_M))
 endif
 
-# Platform + platform-specific linker flags
+# Platform detection: used to locate the native LanceDB library.
+# The CGO flags themselves live in internal/store/cgo_flags.go, so plain
+# `go build` / `go test ./...` work without any environment variables.
 ifeq ($(UNAME_S),Darwin)
 	PLATFORM := darwin
-	PLATFORM_LIBS := -framework Security -framework CoreFoundation
 	BIN := qazyna
 else ifeq ($(UNAME_S),Linux)
 	PLATFORM := linux
-	PLATFORM_LIBS := -lm -ldl -lpthread
 	BIN := qazyna
 else ifneq (,$(findstring MINGW,$(UNAME_S)))
 	PLATFORM := windows
-	PLATFORM_LIBS :=
 	BIN := qazyna.exe
 else
 	$(error Unsupported platform: $(UNAME_S))
 endif
 
-LIB_DIR     := $(CURDIR)/lib/$(PLATFORM)_$(ARCH)
-CGO_CFLAGS  := -I$(CURDIR)/include
-CGO_LDFLAGS := $(LIB_DIR)/liblancedb_go.a $(PLATFORM_LIBS)
+LIB_DIR := $(CURDIR)/lib/$(PLATFORM)_$(ARCH)
 
 LANCEDB_VERSION := v0.1.2
 LANCEDB_LIB     := $(LIB_DIR)/liblancedb_go.a
 
-.PHONY: build run clean deps clean-deps platform-info
+.PHONY: build run test clean deps clean-deps platform-info
 
 # Native LanceDB libraries: downloaded once, skipped if already present
 $(LANCEDB_LIB):
@@ -45,15 +42,17 @@ $(LANCEDB_LIB):
 deps: $(LANCEDB_LIB)
 
 build: $(LANCEDB_LIB)
-	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS)" go build -o bin/$(BIN) ./cmd/qazyna
+	go build -o bin/$(BIN) ./cmd/qazyna
 
 run: build
 	./bin/$(BIN) $(ARGS)
 
+test: $(LANCEDB_LIB)
+	go test ./...
+
 platform-info:
 	@echo "platform: $(PLATFORM)_$(ARCH)"
 	@echo "lib dir:  $(LIB_DIR)"
-	@echo "ldflags:  $(CGO_LDFLAGS)"
 
 clean:
 	rm -rf bin data
