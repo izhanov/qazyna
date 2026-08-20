@@ -488,6 +488,57 @@ func TestRRFMerge(t *testing.T) {
 	}
 }
 
+func TestRunFlushForce(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{
+		docs: []store.Document{{Path: "a.md", Chunks: []parser.Chunk{{Text: "x"}}}},
+		meta: map[string]string{"embedder": "fake/32"},
+	}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "flush", "--force"},
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.resetted {
+		t.Error("flush --force did not reset the store")
+	}
+}
+
+func TestRunFlushRefusesWithoutTerminal(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{
+		docs: []store.Document{{Path: "a.md", Chunks: []parser.Chunk{{Text: "x"}}}},
+	}
+	// Test stdin is not a terminal, so without --force it must refuse.
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "flush"},
+		withFakeStore(&got, st),
+	)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("err = %v, want refusal hinting at --force", err)
+	}
+	if st.resetted {
+		t.Error("store was reset without confirmation")
+	}
+}
+
+func TestRunFlushEmptyDatabase(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "flush"},
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatalf("flush on empty database must succeed, got %v", err)
+	}
+	if st.resetted {
+		t.Error("empty database was reset needlessly")
+	}
+}
+
 func TestOpenStoreUnknownListsRegistered(t *testing.T) {
 	app := &App{stores: map[string]storeFactory{}}
 	var got *config.Config

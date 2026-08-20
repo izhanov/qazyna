@@ -19,6 +19,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/term"
 
 	"qazyna/internal/config"
 	"qazyna/internal/embed"
@@ -72,6 +73,14 @@ func Run(args []string, opts ...Option) error {
 				Usage:     "wipe the database and index from scratch (required after changing the embedding model)",
 				ArgsUsage: "<path> [<path>...]",
 				Action:    app.reindexAction,
+			},
+			{
+				Name:  "flush",
+				Usage: "remove all indexed data from the database",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "skip confirmation"},
+				},
+				Action: app.flushAction,
 			},
 			{
 				Name:      "search",
@@ -334,6 +343,56 @@ func (a *App) collectFiles(roots ...string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func (a *App) flushAction(ctx context.Context, cmd *cli.Command) error {
+	setupLogging(cmd)
+
+	st, err := a.openStore(ctx, newConfig(cmd))
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	n, err := st.Count(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		fmt.Println("database is already empty")
+		return nil
+	}
+
+	if !cmd.Bool("force") {
+		ok, err := confirm(fmt.Sprintf("flush removes ALL indexed data (%d chunks). Continue?", n))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Println("aborted")
+			return nil
+		}
+	}
+
+	if err := st.Reset(ctx); err != nil {
+		return err
+	}
+	fmt.Println("database cleared")
+	return nil
+}
+
+// confirm asks a y/N question on the terminal. A non-interactive stdin
+// (pipe, /dev/null, cron) refuses instead of hanging on a read nobody
+// will answer.
+func confirm(question string) (bool, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false, fmt.Errorf("stdin is not a terminal; pass --force to confirm")
+	}
+	fmt.Printf("%s [y/N]: ", question)
+	var answer string
+	fmt.Scanln(&answer) //nolint:errcheck // empty answer means "no"
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes", nil
 }
 
 func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
