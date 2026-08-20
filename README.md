@@ -47,11 +47,18 @@ Index files and directories (any mix, overlaps are deduplicated):
 ./bin/qazyna index ./notes ./docs README.md
 ```
 
-Search by meaning:
+Search:
 
 ```sh
 ./bin/qazyna search "how to set up ollama"
+./bin/qazyna search --limit 10 --json "vector database"
+./bin/qazyna search --mode text "лениво"        # exact-word lookup
 ```
+
+By default the search is hybrid: a semantic (vector) and a lexical (exact
+words) lookup run concurrently and are fused with Reciprocal Rank Fusion, so
+both question-like queries and grep-style keyword lookups work. `--mode
+vector` or `--mode text` selects a single half.
 
 The database remembers which embedding model built it and refuses to mix
 vectors from different models. After changing `--embed-model`, rebuild from
@@ -96,6 +103,6 @@ internal/store/   Store interface + LanceDB implementation
 - [x] Markdown parser (chunks by headings/paragraphs)
 - [x] Embeddings via Ollama
 - [x] `index`: parse → embed → write to LanceDB
-- [x] `search`: vector search (`--limit`, `--json`)
+- [x] `search`: hybrid vector + lexical search with RRF (`--mode`, `--limit`, `--json`)
 - [ ] HTTP API
 - [ ] PDF, XML, CSV, images, video

@@ -40,6 +40,9 @@ type fakeStore struct {
 	searchVec     []float32
 	searchLimit   int
 	searchResults []store.SearchResult
+
+	textQuery   string
+	textResults []store.SearchResult
 }
 
 func (f *fakeStore) Search(_ context.Context, vec []float32, limit int) ([]store.SearchResult, error) {
@@ -49,6 +52,14 @@ func (f *fakeStore) Search(_ context.Context, vec []float32, limit int) ([]store
 	f.searchLimit = limit
 	return f.searchResults, nil
 }
+
+func (f *fakeStore) SearchText(_ context.Context, query string, _ int) ([]store.SearchResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.textQuery = query
+	return f.textResults, nil
+}
+
 
 func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
 	f.mu.Lock()
@@ -337,7 +348,7 @@ func TestRunSearch(t *testing.T) {
 		},
 	}
 	err := Run(
-		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "--limit", "3", "привет", "мир"},
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "--mode", "vector", "--limit", "3", "привет", "мир"},
 		WithFakeEmbedder(),
 		withFakeStore(&got, st),
 	)
@@ -356,6 +367,100 @@ func TestRunSearch(t *testing.T) {
 	}
 	if norm < 0.99 || norm > 1.01 {
 		t.Errorf("query vector norm² = %f, want ~1", norm)
+	}
+}
+
+func TestRunSearchTextModeNeedsNoEmbedder(t *testing.T) {
+	var got *config.Config
+	// Meta names a foreign embedder and no "ollama" embedder is registered
+	// at all: text mode must not care about either.
+	st := &fakeStore{
+		meta:        map[string]string{"embedder": "ollama/bge-m3"},
+		textResults: []store.SearchResult{{Path: "a.md", Text: "лениво"}},
+	}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "search", "--mode", "text", "лениво"},
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.textQuery != "лениво" {
+		t.Errorf("text query = %q, want %q", st.textQuery, "лениво")
+	}
+	if st.searchVec != nil {
+		t.Error("vector search ran in text mode")
+	}
+}
+
+func TestRunSearchHybrid(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{
+		meta: map[string]string{"embedder": "fake/32"},
+		searchResults: []store.SearchResult{
+			{Path: "a.md", Ordinal: 1, Text: "semantic hit"},
+			{Path: "b.md", Ordinal: 2, Text: "both"},
+		},
+		textResults: []store.SearchResult{
+			{Path: "b.md", Ordinal: 2, Text: "both"},
+			{Path: "c.md", Ordinal: 3, Text: "keyword hit"},
+		},
+	}
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "search", "query"},
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.textQuery == "" || st.searchVec == nil {
+		t.Fatal("hybrid mode must run both searches")
+	}
+	if st.searchLimit != 15 { // limit 5 × 3 for fusion room
+		t.Errorf("vector fetch limit = %d, want 15", st.searchLimit)
+	}
+}
+
+func TestRunSearchUnknownMode(t *testing.T) {
+	err := Run([]string{"qazyna", "search", "--mode", "telepathy", "query"})
+	if err == nil || !strings.Contains(err.Error(), `unknown mode "telepathy"`) {
+		t.Fatalf("err = %v, want unknown mode error", err)
+	}
+}
+
+func TestRRFMerge(t *testing.T) {
+	a := []store.SearchResult{
+		{Path: "a.md", Ordinal: 1},
+		{Path: "b.md", Ordinal: 2},
+	}
+	b := []store.SearchResult{
+		{Path: "b.md", Ordinal: 2},
+		{Path: "c.md", Ordinal: 3},
+	}
+
+	merged := rrfMerge(a, b, 5)
+
+	if len(merged) != 3 {
+		t.Fatalf("merged %d results, want 3 (b deduplicated): %+v", len(merged), merged)
+	}
+	if merged[0].Path != "b.md" {
+		t.Errorf("first = %s, want b.md (present in both lists)", merged[0].Path)
+	}
+	// b.md is #2 semantically and #1 lexically, so its fused score is close
+	// to but below the perfect 1.0 of a result ranked #1 in both lists.
+	if merged[0].Score < 0.95 || merged[0].Score >= 1 {
+		t.Errorf("fused score = %f, want just below 1", merged[0].Score)
+	}
+	if both := rrfMerge(a[:1], a[:1], 1); both[0].Score != 1 {
+		t.Errorf("both-#1 score = %f, want exactly 1", both[0].Score)
+	}
+	if merged[1].Path != "a.md" || merged[2].Path != "c.md" {
+		t.Errorf("tail order = %s, %s; want a.md, c.md", merged[1].Path, merged[2].Path)
+	}
+
+	if got := rrfMerge(a, b, 2); len(got) != 2 {
+		t.Errorf("limit ignored: got %d results", len(got))
 	}
 }
 

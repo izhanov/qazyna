@@ -35,6 +35,10 @@ type Store interface {
 	// best match first. Vectors are expected to be unit-normalized.
 	Search(ctx context.Context, vector []float32, limit int) ([]SearchResult, error)
 
+	// SearchText returns chunks containing the query words (lexical search),
+	// best match first: score is the fraction of query words present.
+	SearchText(ctx context.Context, query string, limit int) ([]SearchResult, error)
+
 	// Meta returns database-level metadata, e.g. which embedder built the
 	// index. Empty map for a fresh database.
 	Meta(ctx context.Context) (map[string]string, error)

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"qazyna/internal/parser"
@@ -145,6 +146,38 @@ func TestLanceSearch(t *testing.T) {
 	}
 	if s := results[1].Score; s < -0.05 || s > 0.05 {
 		t.Errorf("orthogonal score = %f, want ~0", s)
+	}
+}
+
+func TestLanceFullTextSearch(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if err := st.AddDocument(ctx, doc("a.md", "Doorkeeper отзывает его лениво", "просто текст про хлеб")); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := st.SearchText(ctx, "Лениво", 5) // case must not matter
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want exactly the chunk with the word: %+v", len(results), results)
+	}
+	if results[0].Path != "a.md" || !strings.Contains(results[0].Text, "лениво") {
+		t.Errorf("result = %+v", results[0])
+	}
+}
+
+func TestLanceSearchTextEmptyStore(t *testing.T) {
+	st := openTestStore(t)
+
+	results, err := st.SearchText(context.Background(), "anything", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("got %d results from empty store, want 0", len(results))
 	}
 }
 

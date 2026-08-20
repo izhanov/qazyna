@@ -71,6 +71,7 @@ func Run(args []string, opts ...Option) error {
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "limit", Value: 5, Usage: "maximum number of results"},
 					&cli.BoolFlag{Name: "json", Usage: "machine-readable output"},
+					&cli.StringFlag{Name: "mode", Value: "hybrid", Usage: "search mode: hybrid, vector (by meaning) or text (by words)"},
 				},
 				Action: app.searchAction,
 			},
@@ -287,6 +288,13 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	if query == "" {
 		return fmt.Errorf("usage: qazyna search <query>")
 	}
+	mode := cmd.String("mode")
+	switch mode {
+	case "hybrid", "vector", "text":
+	default:
+		return fmt.Errorf("unknown mode %q (want hybrid, vector or text)", mode)
+	}
+	limit := cmd.Int("limit")
 
 	cfg := newConfig(cmd)
 	st, err := a.openStore(ctx, cfg)
@@ -295,34 +303,61 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer st.Close()
 
-	emb, err := a.newEmbedder(cfg)
-	if err != nil {
-		return err
-	}
-
-	// Searching with a different model than the one that built the index
-	// would silently return garbage — refuse, same as index does.
 	meta, err := st.Meta(ctx)
 	if err != nil {
 		return err
 	}
-	switch stored := meta[metaEmbedderKey]; stored {
-	case "":
+	if meta[metaEmbedderKey] == "" {
 		return fmt.Errorf("database is empty; run `qazyna index <path>` first")
-	case emb.ID():
+	}
+
+	// Both halves of a hybrid search run concurrently: embedding the query
+	// dominates the latency, the full-text lookup rides along for free.
+	fetch := limit
+	if mode == "hybrid" {
+		fetch = limit * 3 // give the fusion room to work with
+	}
+	var vecResults, textResults []store.SearchResult
+	g, gctx := errgroup.WithContext(ctx)
+	if mode != "text" {
+		emb, err := a.newEmbedder(cfg)
+		if err != nil {
+			return err
+		}
+		// Searching with a different model than the one that built the
+		// index would silently return garbage — refuse, same as index does.
+		if stored := meta[metaEmbedderKey]; stored != emb.ID() {
+			return fmt.Errorf("database is indexed with embedder %q, current is %q", stored, emb.ID())
+		}
+		g.Go(func() error {
+			vectors, err := emb.Embed(gctx, []string{query})
+			if err != nil {
+				return err
+			}
+			embed.Normalize(vectors)
+			vecResults, err = st.Search(gctx, vectors[0], fetch)
+			return err
+		})
+	}
+	if mode != "vector" {
+		g.Go(func() error {
+			var err error
+			textResults, err = st.SearchText(gctx, query, fetch)
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	var results []store.SearchResult
+	switch mode {
+	case "vector":
+		results = vecResults
+	case "text":
+		results = textResults
 	default:
-		return fmt.Errorf("database is indexed with embedder %q, current is %q", stored, emb.ID())
-	}
-
-	vectors, err := emb.Embed(ctx, []string{query})
-	if err != nil {
-		return err
-	}
-	embed.Normalize(vectors)
-
-	results, err := st.Search(ctx, vectors[0], cmd.Int("limit"))
-	if err != nil {
-		return err
+		results = rrfMerge(vecResults, textResults, limit)
 	}
 
 	if cmd.Bool("json") {
@@ -335,6 +370,51 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	printResults(results)
 	return nil
+}
+
+// rrfMerge fuses two ranked lists via Reciprocal Rank Fusion: each result
+// earns 1/(k+rank) from every list it appears in, so agreement between the
+// semantic and lexical halves beats a high position in either one alone.
+// Scores are scaled so that a #1 hit in both lists gives exactly 1.
+func rrfMerge(a, b []store.SearchResult, limit int) []store.SearchResult {
+	const k = 60
+
+	type entry struct {
+		result store.SearchResult
+		score  float64
+	}
+	byID := map[string]*entry{}
+	add := func(list []store.SearchResult) {
+		for rank, r := range list {
+			id := fmt.Sprintf("%s#%d", r.Path, r.Ordinal)
+			e, ok := byID[id]
+			if !ok {
+				e = &entry{result: r}
+				byID[id] = e
+			}
+			e.score += 1 / float64(k+rank+1)
+		}
+	}
+	add(a)
+	add(b)
+
+	merged := slices.Collect(maps.Values(byID))
+	slices.SortFunc(merged, func(x, y *entry) int {
+		if x.score != y.score {
+			if x.score > y.score {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(x.result.Path, y.result.Path)
+	})
+
+	results := make([]store.SearchResult, 0, min(limit, len(merged)))
+	for _, e := range merged[:min(limit, len(merged))] {
+		e.result.Score = e.score / (2.0 / (k + 1)) // both-#1 → 1.0, single-#1 → 0.5
+		results = append(results, e.result)
+	}
+	return results
 }
 
 func printResults(results []store.SearchResult) {

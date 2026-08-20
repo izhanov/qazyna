@@ -119,15 +119,7 @@ func (l *Lance) Search(ctx context.Context, vector []float32, limit int) ([]Sear
 
 	results := make([]SearchResult, 0, len(rows))
 	for _, row := range rows {
-		r := SearchResult{
-			Path:    fmt.Sprint(row["path"]),
-			Section: fmt.Sprint(row["section"]),
-			Text:    fmt.Sprint(row["text"]),
-		}
-		id := fmt.Sprint(row["id"])
-		if i := strings.LastIndex(id, "#"); i >= 0 {
-			fmt.Sscanf(id[i+1:], "%d", &r.Ordinal) //nolint:errcheck // 0 on failure is fine
-		}
+		r := rowToResult(row)
 		// For unit vectors LanceDB's L2 _distance d relates to cosine
 		// similarity as cos = 1 - d/2 (d is squared euclidean distance).
 		if d, ok := toFloat(row["_distance"]); ok {
@@ -136,6 +128,93 @@ func (l *Lance) Search(ctx context.Context, vector []float32, limit int) ([]Sear
 		results = append(results, r)
 	}
 	return results, nil
+}
+
+// SearchText does lexical search with a SQL ILIKE scan: the SDK's native
+// full-text search is not implemented yet in v0.1.2 ("Full-text search is
+// not currently supported"), and a personal corpus is small enough to scan.
+// Score is the fraction of query words present in the chunk.
+func (l *Lance) SearchText(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.table == nil {
+		return nil, nil
+	}
+
+	words := queryWords(query)
+	if len(words) == 0 {
+		return nil, nil
+	}
+
+	conds := make([]string, len(words))
+	for i, w := range words {
+		conds[i] = fmt.Sprintf("text ILIKE '%%%s%%'", strings.ReplaceAll(w, "'", "''"))
+	}
+	fetch := 256 // candidates to score client-side
+	rows, err := l.table.Select(ctx, contracts.QueryConfig{
+		Columns: []string{"id", "path", "section", "text"},
+		Where:   strings.Join(conds, " OR "),
+		Limit:   &fetch,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("text search: %w", err)
+	}
+
+	results := make([]SearchResult, 0, len(rows))
+	for _, row := range rows {
+		r := rowToResult(row)
+		lower := strings.ToLower(r.Text)
+		matched := 0
+		for _, w := range words {
+			if strings.Contains(lower, w) {
+				matched++
+			}
+		}
+		r.Score = float64(matched) / float64(len(words))
+		results = append(results, r)
+	}
+	slices.SortFunc(results, func(a, b SearchResult) int {
+		if a.Score != b.Score {
+			if a.Score > b.Score {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+// queryWords lowercases and deduplicates query terms, dropping LIKE
+// wildcards so user input cannot turn into match-everything patterns.
+func queryWords(query string) []string {
+	var words []string
+	seen := map[string]bool{}
+	for _, w := range strings.Fields(strings.ToLower(query)) {
+		w = strings.NewReplacer("%", "", "_", "").Replace(w)
+		if w != "" && !seen[w] {
+			seen[w] = true
+			words = append(words, w)
+		}
+	}
+	return words
+}
+
+func rowToResult(row map[string]interface{}) SearchResult {
+	r := SearchResult{
+		Path:    fmt.Sprint(row["path"]),
+		Section: fmt.Sprint(row["section"]),
+		Text:    fmt.Sprint(row["text"]),
+	}
+	id := fmt.Sprint(row["id"])
+	if i := strings.LastIndex(id, "#"); i >= 0 {
+		fmt.Sscanf(id[i+1:], "%d", &r.Ordinal) //nolint:errcheck // 0 on failure is fine
+	}
+	return r
 }
 
 func toFloat(v any) (float64, bool) {
