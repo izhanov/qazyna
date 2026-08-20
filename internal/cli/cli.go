@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -112,6 +114,24 @@ type fileResult struct {
 // metaEmbedderKey stores the Embedder.ID the database was built with.
 const metaEmbedderKey = "embedder"
 
+// setupLogging routes diagnostics to stderr; stdout stays clean for the
+// actual output (search results, progress lines) so piping keeps working.
+func setupLogging(cmd *cli.Command) {
+	level := logLevel(cmd.Bool("quiet"), cmd.Bool("verbose"))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+}
+
+func logLevel(quiet, verbose bool) slog.Level {
+	switch {
+	case quiet:
+		return slog.LevelError // --quiet wins over --verbose
+	case verbose:
+		return slog.LevelDebug
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 	return a.runIndex(ctx, cmd, false)
 }
@@ -121,6 +141,10 @@ func (a *App) reindexAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error {
+	setupLogging(cmd)
+	quiet := cmd.Bool("quiet")
+	start := time.Now()
+
 	roots := cmd.Args().Slice()
 	if len(roots) == 0 {
 		return fmt.Errorf("usage: qazyna %s <path> [<path>...]", cmd.Name)
@@ -187,10 +211,12 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 	for r := range results {
 		if r.err != nil {
 			failed++
-			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", r.path, r.err)
+			slog.Error("failed to index", "file", r.path, "error", r.err)
 			continue
 		}
-		fmt.Printf("  %s — %d chunks indexed\n", r.path, len(r.chunks))
+		if !quiet {
+			fmt.Printf("  %s — %d chunks indexed\n", r.path, len(r.chunks))
+		}
 		total += len(r.chunks)
 	}
 	if err := g.Wait(); err != nil {
@@ -202,6 +228,9 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		return err
 	}
 	fmt.Printf("%d chunks indexed, %d in the database\n", total, stored)
+	slog.Info("done",
+		"files", len(files)-failed, "failed", failed, "chunks", total,
+		"took", time.Since(start).Round(time.Millisecond))
 	if failed > 0 {
 		return fmt.Errorf("%d of %d files failed to index", failed, len(files))
 	}
@@ -233,10 +262,12 @@ func checkEmbedderMeta(ctx context.Context, st store.Store, embedderID string) e
 // indexFile runs the full pipeline for one file: parse → embed → store.
 func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st store.Store) ([]parser.Chunk, error) {
 	p, _ := a.parsers.For(path)
+	t := time.Now()
 	chunks, err := p.Parse(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	slog.Debug("parsed", "file", path, "chunks", len(chunks), "took", time.Since(t).Round(time.Millisecond))
 	if len(chunks) == 0 {
 		// Nothing to store, but drop stale chunks of a now-empty file.
 		return nil, st.DeleteByPath(ctx, path)
@@ -246,11 +277,13 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	for i, c := range chunks {
 		texts[i] = c.Text
 	}
+	t = time.Now()
 	vectors, err := emb.Embed(ctx, texts)
 	if err != nil {
 		return nil, fmt.Errorf("embed %s: %w", path, err)
 	}
 	embed.Normalize(vectors)
+	slog.Debug("embedded", "file", path, "vectors", len(vectors), "took", time.Since(t).Round(time.Millisecond))
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -263,9 +296,11 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 		Chunks:  chunks,
 		Vectors: vectors,
 	}
+	t = time.Now()
 	if err := st.AddDocument(ctx, doc); err != nil {
 		return nil, err
 	}
+	slog.Debug("stored", "file", path, "took", time.Since(t).Round(time.Millisecond))
 	return chunks, nil
 }
 
@@ -302,6 +337,9 @@ func (a *App) collectFiles(roots ...string) ([]string, error) {
 }
 
 func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
+	setupLogging(cmd)
+	start := time.Now()
+
 	query := strings.TrimSpace(strings.Join(cmd.Args().Slice(), " "))
 	if query == "" {
 		return fmt.Errorf("usage: qazyna search <query>")
@@ -377,6 +415,9 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	default:
 		results = rrfMerge(vecResults, textResults, limit)
 	}
+	slog.Debug("search done", "mode", mode,
+		"semantic", len(vecResults), "lexical", len(textResults), "results", len(results),
+		"took", time.Since(start).Round(time.Millisecond))
 
 	if cmd.Bool("json") {
 		for i := range results {

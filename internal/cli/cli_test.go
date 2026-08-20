@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -570,6 +571,23 @@ func TestCollectFilesDeduplicatesOverlappingRoots(t *testing.T) {
 	}
 	if len(files) != 1 || files[0] != path {
 		t.Fatalf("files = %v, want exactly [%s]", files, path)
+	}
+}
+
+func TestLogLevel(t *testing.T) {
+	cases := []struct {
+		quiet, verbose bool
+		want           slog.Level
+	}{
+		{false, false, slog.LevelInfo},
+		{false, true, slog.LevelDebug},
+		{true, false, slog.LevelError},
+		{true, true, slog.LevelError}, // quiet wins
+	}
+	for _, c := range cases {
+		if got := logLevel(c.quiet, c.verbose); got != c.want {
+			t.Errorf("logLevel(quiet=%v, verbose=%v) = %v, want %v", c.quiet, c.verbose, got, c.want)
+		}
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -71,6 +72,8 @@ func (o *Ollama) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		if !retryable {
 			return nil, err
 		}
+		slog.Warn("ollama request failed, will retry",
+			"attempt", attempt+1, "of", o.attempts, "error", err)
 		lastErr = err
 	}
 	return nil, fmt.Errorf("after %d attempts: %w", o.attempts, lastErr)

@@ -66,6 +66,8 @@ func WithDefaultStore() Option {
 
 func flags() []cli.Flag {
 	return []cli.Flag{
+		&cli.BoolFlag{Name: "verbose", Usage: "debug logging: per-file timings, retries"},
+		&cli.BoolFlag{Name: "quiet", Usage: "errors and the final summary only"},
 		&cli.StringFlag{Name: "store", Value: "lance", Usage: "storage backend"},
 		&cli.StringFlag{Name: "db", Value: "data/qazyna.lance", Usage: "path to the database"},
 		&cli.StringFlag{Name: "embedder", Value: "ollama", Usage: "embedding backend"},
