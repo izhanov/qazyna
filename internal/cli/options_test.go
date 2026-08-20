@@ -66,7 +66,7 @@ func TestWithDefaultParsers(t *testing.T) {
 	if err := WithDefaultParsers()(app); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"a.md", "b.markdown", "c.pdf"} {
+	for _, path := range []string{"a.md", "b.markdown", "c.pdf", "d.xml", "e.csv", "f.tsv"} {
 		if _, ok := app.parsers.For(path); !ok {
 			t.Errorf("no parser registered for %s", path)
 		}

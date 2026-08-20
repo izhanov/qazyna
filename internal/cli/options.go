@@ -50,7 +50,7 @@ func WithParser(p parser.Parser) Option {
 // WithDefaultParsers registers a parser for every supported format.
 func WithDefaultParsers() Option {
 	return func(a *App) error {
-		for _, p := range []parser.Parser{parser.Markdown{}, parser.PDF{}} {
+		for _, p := range []parser.Parser{parser.Markdown{}, parser.PDF{}, parser.XML{}, parser.CSV{}} {
 			a.parsers.Register(p)
 		}
 		return nil

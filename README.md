@@ -5,7 +5,7 @@ Files are split into chunks, each chunk gets an embedding computed locally (Olla
 and vectors are stored in [LanceDB](https://lancedb.com). Search is vector-based —
 by meaning, not by substring.
 
-Supported formats: Markdown, PDF (text layer). Planned: XML, CSV, JPEG, PNG, video.
+Supported formats: Markdown, PDF (text layer), XML, CSV/TSV. Planned: JPEG, PNG, video.
 
 ## Requirements
 
@@ -106,5 +106,7 @@ internal/store/   Store interface + LanceDB implementation
 - [x] `index`: parse → embed → write to LanceDB
 - [x] `search`: hybrid vector + lexical search with RRF (`--mode`, `--limit`, `--json`)
 - [x] PDF parser (text layer via `pdftotext`; scanned PDFs need OCR, later)
+- [x] XML parser (subtree chunks, tag names become sections and labels)
+- [x] CSV/TSV parser (rows with headers woven in, packed up to chunk size)
 - [ ] HTTP API
-- [ ] XML, CSV, images (OCR/captioning), video
+- [ ] Images (OCR/captioning), video
