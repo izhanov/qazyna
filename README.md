@@ -5,13 +5,14 @@ Files are split into chunks, each chunk gets an embedding computed locally (Olla
 and vectors are stored in [LanceDB](https://lancedb.com). Search is vector-based —
 by meaning, not by substring.
 
-Supported formats: Markdown (in progress). Planned: PDF, XML, CSV, JPEG, PNG, video.
+Supported formats: Markdown, PDF (text layer). Planned: XML, CSV, JPEG, PNG, video.
 
 ## Requirements
 
 - Go 1.26+
 - macOS, Linux, or Windows (MinGW/Git Bash) — the `Makefile` detects the platform
   automatically, check it with `make platform-info`
+- Poppler for PDF parsing: `brew install poppler` (provides `pdftotext`)
 - [Ollama](https://ollama.com) with an embedding model (default: `bge-m3` —
   multilingual, works well for Cyrillic):
 
@@ -104,5 +105,6 @@ internal/store/   Store interface + LanceDB implementation
 - [x] Embeddings via Ollama
 - [x] `index`: parse → embed → write to LanceDB
 - [x] `search`: hybrid vector + lexical search with RRF (`--mode`, `--limit`, `--json`)
+- [x] PDF parser (text layer via `pdftotext`; scanned PDFs need OCR, later)
 - [ ] HTTP API
-- [ ] PDF, XML, CSV, images, video
+- [ ] XML, CSV, images (OCR/captioning), video

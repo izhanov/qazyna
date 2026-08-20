@@ -49,7 +49,12 @@ func WithParser(p parser.Parser) Option {
 
 // WithDefaultParsers registers a parser for every supported format.
 func WithDefaultParsers() Option {
-	return WithParser(parser.Markdown{})
+	return func(a *App) error {
+		for _, p := range []parser.Parser{parser.Markdown{}, parser.PDF{}} {
+			a.parsers.Register(p)
+		}
+		return nil
+	}
 }
 
 // WithDefaultStore registers the LanceDB store backend.
