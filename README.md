@@ -21,13 +21,16 @@ ollama pull nomic-embed-text
 
 ## Installation
 
-The LanceDB Go SDK works through CGO on top of a native library, so download it
-before the first build (it goes into `lib/` and `include/`, not tracked by git):
+The LanceDB Go SDK works through CGO on top of a native library. The first
+`make build` downloads it automatically (into `lib/` and `include/`, not tracked
+by git) and then compiles the binary:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/lancedb/lancedb-go/main/scripts/download-artifacts.sh | bash -s v0.1.2
 make build
 ```
+
+Useful extra targets: `make deps` (download the native libraries only),
+`make clean-deps` (remove them, e.g. before a version bump).
 
 The binary lands in `bin/qazyna`. All required CGO flags are set in the `Makefile`;
 if you build directly with `go build`, export them yourself:

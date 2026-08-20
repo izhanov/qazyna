@@ -33,9 +33,18 @@ LIB_DIR     := $(CURDIR)/lib/$(PLATFORM)_$(ARCH)
 CGO_CFLAGS  := -I$(CURDIR)/include
 CGO_LDFLAGS := $(LIB_DIR)/liblancedb_go.a $(PLATFORM_LIBS)
 
-.PHONY: build run clean platform-info
+LANCEDB_VERSION := v0.1.2
+LANCEDB_LIB     := $(LIB_DIR)/liblancedb_go.a
 
-build:
+.PHONY: build run clean deps clean-deps platform-info
+
+# Native LanceDB libraries: downloaded once, skipped if already present
+$(LANCEDB_LIB):
+	curl -sSL https://raw.githubusercontent.com/lancedb/lancedb-go/main/scripts/download-artifacts.sh | bash -s $(LANCEDB_VERSION)
+
+deps: $(LANCEDB_LIB)
+
+build: $(LANCEDB_LIB)
 	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS)" go build -o bin/$(BIN) ./cmd/qazyna
 
 run: build
@@ -48,3 +57,6 @@ platform-info:
 
 clean:
 	rm -rf bin data
+
+clean-deps:
+	rm -rf lib include
