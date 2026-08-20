@@ -169,6 +169,27 @@ func TestLanceFullTextSearch(t *testing.T) {
 	}
 }
 
+func TestQueryWords(t *testing.T) {
+	got := queryWords("Как горутины общаются между собой?")
+	want := []string{"горутины", "общаются"}
+	if len(got) != len(want) {
+		t.Fatalf("queryWords = %v, want %v (stopwords must be dropped)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("queryWords[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	if got := queryWords("и как между"); len(got) != 0 {
+		t.Errorf("stopword-only query gave %v, want empty", got)
+	}
+	if got := queryWords("%dry_run%"); len(got) != 1 || got[0] != "dry_run" {
+		// "%" stripped; "_" kept — it matches itself in LIKE patterns
+		t.Errorf("wildcard query gave %v", got)
+	}
+}
+
 func TestLanceSearchTextEmptyStore(t *testing.T) {
 	st := openTestStore(t)
 

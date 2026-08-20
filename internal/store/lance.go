@@ -189,17 +189,22 @@ func (l *Lance) SearchText(ctx context.Context, query string, limit int) ([]Sear
 	return results, nil
 }
 
-// queryWords lowercases and deduplicates query terms, dropping LIKE
-// wildcards so user input cannot turn into match-everything patterns.
+// queryWords lowercases and deduplicates query terms, dropping stopwords
+// (they match everything and only promote noise) and LIKE wildcards so
+// user input cannot turn into match-everything patterns.
 func queryWords(query string) []string {
 	var words []string
 	seen := map[string]bool{}
 	for _, w := range strings.Fields(strings.ToLower(query)) {
-		w = strings.NewReplacer("%", "", "_", "").Replace(w)
-		if w != "" && !seen[w] {
-			seen[w] = true
-			words = append(words, w)
+		// "%" is a LIKE wildcard; "_" (any-one-char) is kept — it still
+		// matches itself, so identifiers like dry_run stay searchable.
+		w = strings.ReplaceAll(w, "%", "")
+		w = strings.Trim(w, ".,!?:;()[]{}«»\"'`")
+		if w == "" || stopwords[w] || seen[w] {
+			continue
 		}
+		seen[w] = true
+		words = append(words, w)
 	}
 	return words
 }
