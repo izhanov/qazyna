@@ -86,7 +86,7 @@ internal/store/   Store interface + LanceDB implementation
 - [x] CLI skeleton, LanceDB connection
 - [x] Markdown parser (chunks by headings/paragraphs)
 - [ ] Embeddings via Ollama
-- [ ] `index`: parse → embed → write to LanceDB
+- [x] `index`: parse → embed → write to LanceDB (with the fake embedder for now)
 - [ ] `search`: vector search
 - [ ] HTTP API
 - [ ] PDF, XML, CSV, images, video

@@ -11,6 +11,7 @@ func main() {
 	err := cli.Run(os.Args,
 		cli.WithDefaultStore(),
 		cli.WithDefaultParsers(),
+		cli.WithFakeEmbedder(),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

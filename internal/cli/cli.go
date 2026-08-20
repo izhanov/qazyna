@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -14,25 +15,29 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"qazyna/internal/config"
+	"qazyna/internal/embed"
 	"qazyna/internal/parser"
 	"qazyna/internal/store"
 )
 
 type storeFactory func(ctx context.Context, cfg *config.Config) (store.Store, error)
+type embedderFactory func(cfg *config.Config) (embed.Embedder, error)
 
 // App holds the registered backends; which one to use is picked
 // by the user via --store / --embedder flags.
 type App struct {
-	stores  map[string]storeFactory
-	parsers *parser.Registry
+	stores    map[string]storeFactory
+	embedders map[string]embedderFactory
+	parsers   *parser.Registry
 }
 
 type Option func(*App) error
 
 func Run(args []string, opts ...Option) error {
 	app := &App{
-		stores:  map[string]storeFactory{},
-		parsers: parser.NewRegistry(),
+		stores:    map[string]storeFactory{},
+		embedders: map[string]embedderFactory{},
+		parsers:   parser.NewRegistry(),
 	}
 	for _, o := range opts {
 		if err := o(app); err != nil {
@@ -70,6 +75,14 @@ func (a *App) openStore(ctx context.Context, cfg *config.Config) (store.Store, e
 	return f(ctx, cfg)
 }
 
+func (a *App) newEmbedder(cfg *config.Config) (embed.Embedder, error) {
+	f, ok := a.embedders[cfg.EmbedderName]
+	if !ok {
+		return nil, fmt.Errorf("unknown embedder %q (registered: %v)", cfg.EmbedderName, slices.Sorted(maps.Keys(a.embedders)))
+	}
+	return f(cfg)
+}
+
 type fileResult struct {
 	path   string
 	chunks []parser.Chunk
@@ -87,6 +100,11 @@ func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer st.Close()
+
+	emb, err := a.newEmbedder(cfg)
+	if err != nil {
+		return err
+	}
 
 	files, err := a.collectFiles(root)
 	if err != nil {
@@ -106,10 +124,9 @@ func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 	go func() {
 		for _, path := range files {
 			g.Go(func() error {
-				p, _ := a.parsers.For(path)
-				chunks, err := p.Parse(ctx, path)
+				chunks, err := a.indexFile(ctx, path, emb, st)
 				if err != nil {
-					return fmt.Errorf("parse %s: %w", path, err)
+					return err
 				}
 				select {
 				case results <- fileResult{path: path, chunks: chunks}:
@@ -125,15 +142,57 @@ func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
 
 	total := 0
 	for r := range results {
-		fmt.Printf("  %s — %d chunks\n", r.path, len(r.chunks))
+		fmt.Printf("  %s — %d chunks indexed\n", r.path, len(r.chunks))
 		total += len(r.chunks)
 	}
 	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	fmt.Printf("%d chunks total (embedding not implemented yet)\n", total)
+	stored, err := st.Count(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d chunks indexed, %d in the database\n", total, stored)
 	return nil
+}
+
+// indexFile runs the full pipeline for one file: parse → embed → store.
+func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st store.Store) ([]parser.Chunk, error) {
+	p, _ := a.parsers.For(path)
+	chunks, err := p.Parse(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if len(chunks) == 0 {
+		// Nothing to store, but drop stale chunks of a now-empty file.
+		return nil, st.DeleteByPath(ctx, path)
+	}
+
+	texts := make([]string, len(chunks))
+	for i, c := range chunks {
+		texts[i] = c.Text
+	}
+	vectors, err := emb.Embed(ctx, texts)
+	if err != nil {
+		return nil, fmt.Errorf("embed %s: %w", path, err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	doc := store.Document{
+		Path:    path,
+		MTime:   info.ModTime().Unix(),
+		Chunks:  chunks,
+		Vectors: vectors,
+	}
+	if err := st.AddDocument(ctx, doc); err != nil {
+		return nil, err
+	}
+	return chunks, nil
 }
 
 // collectFiles returns the files under root that have a registered parser.

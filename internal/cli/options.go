@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"qazyna/internal/config"
+	"qazyna/internal/embed"
 	"qazyna/internal/parser"
 	"qazyna/internal/store"
 )
@@ -15,6 +16,21 @@ func WithStore(name string, f storeFactory) Option {
 		a.stores[name] = f
 		return nil
 	}
+}
+
+func WithEmbedder(name string, f embedderFactory) Option {
+	return func(a *App) error {
+		a.embedders[name] = f
+		return nil
+	}
+}
+
+// WithFakeEmbedder registers a deterministic no-model embedder, useful for
+// tests and for running the pipeline without Ollama: --embedder fake.
+func WithFakeEmbedder() Option {
+	return WithEmbedder("fake", func(_ *config.Config) (embed.Embedder, error) {
+		return embed.Fake{Dim: 32}, nil
+	})
 }
 
 func WithParser(p parser.Parser) Option {

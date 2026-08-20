@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"qazyna/internal/config"
@@ -30,20 +31,43 @@ func (failParser) Parse(_ context.Context, _ string) ([]parser.Chunk, error) {
 }
 
 type fakeStore struct {
-	closed *bool
+	mu     sync.Mutex
+	closed bool
+	docs   []store.Document
 }
 
-func (f fakeStore) Close() error {
-	*f.closed = true
+func (f *fakeStore) AddDocument(_ context.Context, doc store.Document) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.docs = append(f.docs, doc)
+	return nil
+}
+
+func (f *fakeStore) DeleteByPath(_ context.Context, _ string) error { return nil }
+
+func (f *fakeStore) Count(_ context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var n int64
+	for _, d := range f.docs {
+		n += int64(len(d.Chunks))
+	}
+	return n, nil
+}
+
+func (f *fakeStore) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
 	return nil
 }
 
 // withFakeStore registers a "fake" store backend that captures the config
-// it was built with and records Close calls.
-func withFakeStore(got **config.Config, closed *bool) Option {
+// it was built with and records everything written to it.
+func withFakeStore(got **config.Config, st *fakeStore) Option {
 	return WithStore("fake", func(_ context.Context, cfg *config.Config) (store.Store, error) {
 		*got = cfg
-		return fakeStore{closed: closed}, nil
+		return st, nil
 	})
 }
 
@@ -61,14 +85,13 @@ func TestRunIndex(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.md"), "# Title\n\nhello\n")
 
-	var (
-		got    *config.Config
-		closed bool
-	)
+	var got *config.Config
+	st := &fakeStore{}
 	err := Run(
-		[]string{"qazyna", "--store", "fake", "--db", "custom.lance", "index", dir},
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "--db", "custom.lance", "index", dir},
 		WithDefaultParsers(),
-		withFakeStore(&got, &closed),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -79,8 +102,25 @@ func TestRunIndex(t *testing.T) {
 	if got.DBPath != "custom.lance" {
 		t.Errorf("DBPath = %q, want %q", got.DBPath, "custom.lance")
 	}
-	if !closed {
+	if !st.closed {
 		t.Error("store was not closed")
+	}
+
+	if len(st.docs) != 1 {
+		t.Fatalf("stored %d documents, want 1", len(st.docs))
+	}
+	doc := st.docs[0]
+	if doc.Path != filepath.Join(dir, "a.md") {
+		t.Errorf("doc path = %q", doc.Path)
+	}
+	if len(doc.Chunks) != 1 || len(doc.Vectors) != 1 {
+		t.Fatalf("doc has %d chunks and %d vectors, want 1 and 1", len(doc.Chunks), len(doc.Vectors))
+	}
+	if doc.Chunks[0].Text != "hello" {
+		t.Errorf("chunk text = %q, want %q", doc.Chunks[0].Text, "hello")
+	}
+	if doc.MTime == 0 {
+		t.Error("doc mtime is not set")
 	}
 }
 
@@ -105,17 +145,30 @@ func TestRunIndexNoSupportedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "photo.png"), "not really a png")
 
-	var (
-		got    *config.Config
-		closed bool
-	)
+	var got *config.Config
 	err := Run(
-		[]string{"qazyna", "--store", "fake", "index", dir},
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
 		WithDefaultParsers(),
-		withFakeStore(&got, &closed),
+		WithFakeEmbedder(),
+		withFakeStore(&got, &fakeStore{}),
 	)
 	if err == nil || !strings.Contains(err.Error(), "no supported files") {
 		t.Fatalf("err = %v, want no supported files error", err)
+	}
+}
+
+func TestRunIndexUnknownEmbedder(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	var got *config.Config
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "index", dir}, // default --embedder ollama not registered
+		WithDefaultParsers(),
+		withFakeStore(&got, &fakeStore{}),
+	)
+	if err == nil || !strings.Contains(err.Error(), `unknown embedder "ollama"`) {
+		t.Fatalf("err = %v, want unknown embedder error", err)
 	}
 }
 
@@ -123,14 +176,12 @@ func TestRunIndexPropagatesParseError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.bad"), "whatever")
 
-	var (
-		got    *config.Config
-		closed bool
-	)
+	var got *config.Config
 	err := Run(
-		[]string{"qazyna", "--store", "fake", "index", dir},
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
 		WithParser(failParser{}),
-		withFakeStore(&got, &closed),
+		WithFakeEmbedder(),
+		withFakeStore(&got, &fakeStore{}),
 	)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v, want parse error", err)
@@ -146,9 +197,8 @@ func TestRunSearchNotImplemented(t *testing.T) {
 
 func TestOpenStoreUnknownListsRegistered(t *testing.T) {
 	app := &App{stores: map[string]storeFactory{}}
-	var closed bool
 	var got *config.Config
-	if err := withFakeStore(&got, &closed)(app); err != nil {
+	if err := withFakeStore(&got, &fakeStore{})(app); err != nil {
 		t.Fatal(err)
 	}
 

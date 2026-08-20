@@ -3,13 +3,13 @@ module qazyna
 go 1.26.5
 
 require (
+	github.com/apache/arrow/go/v17 v17.0.0
 	github.com/lancedb/lancedb-go v0.1.2
 	github.com/urfave/cli/v3 v3.11.0
 	golang.org/x/sync v0.22.0
 )
 
 require (
-	github.com/apache/arrow/go/v17 v17.0.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
