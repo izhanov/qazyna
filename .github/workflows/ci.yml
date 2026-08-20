@@ -40,6 +40,12 @@ jobs:
       - name: Download native libraries
         run: make deps
 
+      # Re-run unconditionally: a cache hit skips the make rule, but the
+      # cached Linux archive may predate the ranlib fix.
+      - name: Index the static archive (GNU ld needs it)
+        if: runner.os == 'Linux'
+        run: ranlib lib/*/liblancedb_go.a
+
       - name: Check formatting
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
 

@@ -38,9 +38,12 @@ GO_FLAGS := -ldflags "-X qazyna/internal/cli.version=$(VERSION)"
 
 .PHONY: build run test install clean deps clean-deps platform-info
 
-# Native LanceDB libraries: downloaded once, skipped if already present
+# Native LanceDB libraries: downloaded once, skipped if already present.
+# The published Linux archive ships without a symbol index, which GNU ld
+# refuses to link — ranlib fixes it in place (harmless elsewhere).
 $(LANCEDB_LIB):
 	curl -sSL https://raw.githubusercontent.com/lancedb/lancedb-go/main/scripts/download-artifacts.sh | bash -s $(LANCEDB_VERSION)
+	ranlib $(LANCEDB_LIB) 2>/dev/null || true
 
 deps: $(LANCEDB_LIB)
 
