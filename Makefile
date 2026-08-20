@@ -39,10 +39,12 @@ GO_FLAGS := -ldflags "-X qazyna/internal/cli.version=$(VERSION)"
 .PHONY: build run test install clean deps clean-deps platform-info
 
 # Native LanceDB libraries: downloaded once, skipped if already present.
-# The published Linux archive ships without a symbol index, which GNU ld
-# refuses to link — ranlib fixes it in place (harmless elsewhere).
+# The per-platform release assets of v0.1.2 overwrote each other at upload
+# (all were named liblancedb_go.a), so only the combined tarball contains
+# correct libraries for every platform. Extract just ours plus the header.
 $(LANCEDB_LIB):
-	curl -sSL https://raw.githubusercontent.com/lancedb/lancedb-go/main/scripts/download-artifacts.sh | bash -s $(LANCEDB_VERSION)
+	curl -sSL https://github.com/lancedb/lancedb-go/releases/download/$(LANCEDB_VERSION)/lancedb-go-native-binaries.tar.gz \
+		| tar -xzf - lib/$(PLATFORM)_$(ARCH) include
 	ranlib $(LANCEDB_LIB) 2>/dev/null || true
 
 deps: $(LANCEDB_LIB)
