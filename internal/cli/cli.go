@@ -52,14 +52,14 @@ func Run(args []string, opts ...Option) error {
 		Commands: []*cli.Command{
 			{
 				Name:      "index",
-				Usage:     "index a file or directory",
-				ArgsUsage: "<path>",
+				Usage:     "index files and directories",
+				ArgsUsage: "<path> [<path>...]",
 				Action:    app.indexAction,
 			},
 			{
 				Name:      "reindex",
 				Usage:     "wipe the database and index from scratch (required after changing the embedding model)",
-				ArgsUsage: "<path>",
+				ArgsUsage: "<path> [<path>...]",
 				Action:    app.reindexAction,
 			},
 			{
@@ -106,9 +106,9 @@ func (a *App) reindexAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error {
-	root := cmd.Args().First()
-	if root == "" {
-		return fmt.Errorf("usage: qazyna %s <path>", cmd.Name)
+	roots := cmd.Args().Slice()
+	if len(roots) == 0 {
+		return fmt.Errorf("usage: qazyna %s <path> [<path>...]", cmd.Name)
 	}
 
 	cfg := newConfig(cmd)
@@ -132,12 +132,12 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 		return err
 	}
 
-	files, err := a.collectFiles(root)
+	files, err := a.collectFiles(roots...)
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no supported files found in %s", root)
+		return fmt.Errorf("no supported files found in %s", strings.Join(roots, ", "))
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -243,27 +243,34 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	return chunks, nil
 }
 
-// collectFiles returns the files under root that have a registered parser.
-func (a *App) collectFiles(root string) ([]string, error) {
+// collectFiles returns the files under the given roots that have a registered
+// parser. Overlapping roots (e.g. `notes/` and `notes/a.md`) are deduplicated,
+// so every file is indexed at most once.
+func (a *App) collectFiles(roots ...string) ([]string, error) {
 	var files []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			// Skip hidden directories such as .git, but not root itself (".").
-			if name := d.Name(); name != "." && strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
+	seen := map[string]bool{}
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				// Skip hidden directories such as .git, but not root itself (".").
+				if name := d.Name(); name != "." && strings.HasPrefix(name, ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			path = filepath.Clean(path)
+			if _, ok := a.parsers.For(path); ok && !seen[path] {
+				seen[path] = true
+				files = append(files, path)
 			}
 			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		if _, ok := a.parsers.For(path); ok {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return files, nil
 }

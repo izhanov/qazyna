@@ -332,6 +332,51 @@ func TestCollectFiles(t *testing.T) {
 	}
 }
 
+func TestRunIndexMultiplePaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "notes", "a.md"), "alpha\n")
+	writeFile(t, filepath.Join(dir, "docs", "b.md"), "beta\n")
+	single := filepath.Join(dir, "c.md")
+	writeFile(t, single, "gamma\n")
+
+	var got *config.Config
+	st := &fakeStore{}
+	err := Run(
+		[]string{
+			"qazyna", "--store", "fake", "--embedder", "fake", "index",
+			filepath.Join(dir, "notes"), filepath.Join(dir, "docs"), single,
+		},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.docs) != 3 {
+		t.Fatalf("stored %d documents, want 3: %+v", len(st.docs), st.docs)
+	}
+}
+
+func TestCollectFilesDeduplicatesOverlappingRoots(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	writeFile(t, path, "a")
+
+	app := &App{parsers: parser.NewRegistry()}
+	app.parsers.Register(parser.Markdown{})
+
+	// The same file is reachable three ways: via the dir, directly, and
+	// via an unclean path. It must be indexed exactly once.
+	files, err := app.collectFiles(dir, path, dir+"//a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0] != path {
+		t.Fatalf("files = %v, want exactly [%s]", files, path)
+	}
+}
+
 func TestCollectFilesSingleFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.md")

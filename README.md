@@ -40,10 +40,10 @@ downloaded (`make deps`).
 
 ## Usage
 
-Index a file or a directory:
+Index files and directories (any mix, overlaps are deduplicated):
 
 ```sh
-./bin/qazyna index ./notes
+./bin/qazyna index ./notes ./docs README.md
 ```
 
 Search by meaning:
