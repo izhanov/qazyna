@@ -33,7 +33,7 @@ LIB_DIR := $(CURDIR)/lib/$(PLATFORM)_$(ARCH)
 LANCEDB_VERSION := v0.1.2
 LANCEDB_LIB     := $(LIB_DIR)/liblancedb_go.a
 
-.PHONY: build run test clean deps clean-deps platform-info
+.PHONY: build run test install clean deps clean-deps platform-info
 
 # Native LanceDB libraries: downloaded once, skipped if already present
 $(LANCEDB_LIB):
@@ -49,6 +49,9 @@ run: build
 
 test: $(LANCEDB_LIB)
 	go test ./...
+
+install: $(LANCEDB_LIB)
+	go install ./cmd/qazyna
 
 platform-info:
 	@echo "platform: $(PLATFORM)_$(ARCH)"

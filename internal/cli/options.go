@@ -68,11 +68,16 @@ func flags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{Name: "verbose", Usage: "debug logging: per-file timings, retries"},
 		&cli.BoolFlag{Name: "quiet", Usage: "errors and the final summary only"},
-		&cli.StringFlag{Name: "store", Value: "lance", Usage: "storage backend"},
-		&cli.StringFlag{Name: "db", Value: "data/qazyna.lance", Usage: "path to the database"},
-		&cli.StringFlag{Name: "embedder", Value: "ollama", Usage: "embedding backend"},
-		&cli.StringFlag{Name: "ollama-url", Value: "http://localhost:11434", Usage: "Ollama server URL"},
-		&cli.StringFlag{Name: "embed-model", Value: "bge-m3", Usage: "Ollama embedding model"},
+		&cli.StringFlag{Name: "store", Value: "lance", Usage: "storage backend",
+			Sources: cli.EnvVars("QAZYNA_STORE")},
+		&cli.StringFlag{Name: "db", Value: config.DefaultDBPath(), Usage: "path to the database",
+			Sources: cli.EnvVars("QAZYNA_DB")},
+		&cli.StringFlag{Name: "embedder", Value: "ollama", Usage: "embedding backend",
+			Sources: cli.EnvVars("QAZYNA_EMBEDDER")},
+		&cli.StringFlag{Name: "ollama-url", Value: "http://localhost:11434", Usage: "Ollama server URL",
+			Sources: cli.EnvVars("QAZYNA_OLLAMA_URL")},
+		&cli.StringFlag{Name: "embed-model", Value: "bge-m3", Usage: "Ollama embedding model",
+			Sources: cli.EnvVars("QAZYNA_EMBED_MODEL")},
 	}
 }
 

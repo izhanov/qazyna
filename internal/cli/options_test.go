@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"qazyna/internal/config"
@@ -113,12 +115,51 @@ func TestNewConfigDefaults(t *testing.T) {
 
 	want := config.Config{
 		StoreName:    "fake", // overridden by the flag
-		DBPath:       "data/qazyna.lance",
+		DBPath:       config.DefaultDBPath(),
 		EmbedderName: "fake", // overridden by the flag
 		OllamaURL:    "http://localhost:11434",
 		EmbedModel:   "bge-m3",
 	}
 	if *got != want {
 		t.Errorf("config = %+v, want %+v", *got, want)
+	}
+}
+
+func TestFlagsReadEnvVars(t *testing.T) {
+	t.Setenv("QAZYNA_DB", "/tmp/custom.lance")
+	t.Setenv("QAZYNA_EMBED_MODEL", "custom-model")
+
+	dir := t.TempDir()
+	writeFile(t, dir+"/a.md", "hello\n")
+
+	var got *config.Config
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, &fakeStore{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DBPath != "/tmp/custom.lance" {
+		t.Errorf("DBPath = %q, want env value", got.DBPath)
+	}
+	if got.EmbedModel != "custom-model" {
+		t.Errorf("EmbedModel = %q, want env value", got.EmbedModel)
+	}
+}
+
+func TestDefaultDBPathHonorsXDG(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/custom/share")
+	if got := config.DefaultDBPath(); got != "/custom/share/qazyna/db.lance" {
+		t.Errorf("DefaultDBPath = %q", got)
+	}
+
+	t.Setenv("XDG_DATA_HOME", "")
+	home, _ := os.UserHomeDir()
+	want := filepath.Join(home, ".local", "share", "qazyna", "db.lance")
+	if got := config.DefaultDBPath(); got != want {
+		t.Errorf("DefaultDBPath = %q, want %q", got, want)
 	}
 }

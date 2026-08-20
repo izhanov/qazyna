@@ -34,7 +34,17 @@ make build
 Useful extra targets: `make deps` (download the native libraries only),
 `make clean-deps` (remove them, e.g. before a version bump).
 
-The binary lands in `bin/qazyna`. The CGO flags for linking the native library
+The binary lands in `bin/qazyna`. To install it into your PATH (via `go
+install`, so it works from any directory):
+
+```sh
+make install
+```
+
+The database lives in `~/.local/share/qazyna/db.lance` by default
+(`$XDG_DATA_HOME` is honored), so every directory shares one index. Every
+flag has an env twin: `QAZYNA_DB`, `QAZYNA_STORE`, `QAZYNA_EMBEDDER`,
+`QAZYNA_OLLAMA_URL`, `QAZYNA_EMBED_MODEL`. The CGO flags for linking the native library
 are declared in `internal/store/cgo_flags.go` (via `#cgo` directives with
 `${SRCDIR}`-relative paths), so plain `go build ./...` and `go test ./...` work
 without any environment variables — as long as the native libraries are
@@ -74,7 +84,7 @@ scratch:
 | Flag | Default | Description |
 |---|---|---|
 | `--store` | `lance` | storage backend |
-| `--db` | `data/qazyna.lance` | path to the LanceDB database |
+| `--db` | `~/.local/share/qazyna/db.lance` | path to the LanceDB database |
 | `--embedder` | `ollama` | embedding backend |
 | `--ollama-url` | `http://localhost:11434` | Ollama server URL |
 | `--embed-model` | `bge-m3` | embedding model |
