@@ -27,6 +27,7 @@ import (
 	"qazyna/internal/mcpserver/tools"
 	"qazyna/internal/parser"
 	"qazyna/internal/search"
+	"qazyna/internal/skill"
 	"qazyna/internal/store"
 )
 
@@ -117,9 +118,56 @@ func Run(args []string, opts ...Option) error {
 				},
 				Action: app.searchAction,
 			},
+			{
+				Name:  "skill",
+				Usage: "manage the Claude Code skill that teaches AI agents to search with qazyna",
+				Commands: []*cli.Command{
+					{
+						Name:   "install",
+						Usage:  "install the skill into ~/.claude/skills (overwrites previous version)",
+						Action: skillInstallAction,
+					},
+					{
+						Name:   "uninstall",
+						Usage:  "remove the installed skill",
+						Action: skillUninstallAction,
+					},
+					{
+						Name:   "show",
+						Usage:  "print the skill to stdout",
+						Action: skillShowAction,
+					},
+				},
+			},
 		},
 	}
 	return cmd.Run(ctx, args)
+}
+
+func skillInstallAction(_ context.Context, _ *cli.Command) error {
+	path, err := skill.Install()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("skill installed: %s\n", path)
+	fmt.Println("\nIt loads automatically in new Claude Code sessions. To make agents")
+	fmt.Println("reach for it proactively, add a line to your ~/.claude/CLAUDE.md:")
+	fmt.Println("\n  Before tasks involving my notes, docs or style guides, use the qazyna-search skill.")
+	return nil
+}
+
+func skillUninstallAction(_ context.Context, _ *cli.Command) error {
+	dir, err := skill.Uninstall()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("skill removed: %s\n", dir)
+	return nil
+}
+
+func skillShowAction(_ context.Context, _ *cli.Command) error {
+	_, err := os.Stdout.Write(skill.Content)
+	return err
 }
 
 func (a *App) openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {

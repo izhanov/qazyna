@@ -116,6 +116,23 @@ design: three tools — `search_notes`, `index_status` and `list_files`
 claude mcp add qazyna -- qazyna mcp
 ```
 
+### Claude Code skill (teach agents the search loop)
+
+The MCP server gives agents the tools; the bundled skill teaches them the
+workflow — search the index first, read only what search surfaced, verify
+freshness, suggest reindexing after edits. Install it once:
+
+```sh
+qazyna skill install
+```
+
+The skill lands in `~/.claude/skills/qazyna-search/` and loads in every
+Claude Code session, in any repository. `qazyna skill show` prints it,
+`qazyna skill uninstall` removes it. To make agents reach for it proactively,
+add one line to your `~/.claude/CLAUDE.md`:
+
+> Before tasks involving my notes, docs or style guides, use the qazyna-search skill.
+
 The database remembers which embedding model built it and refuses to mix
 vectors from different models. After changing `--embed-model`, rebuild from
 scratch:
