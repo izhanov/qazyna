@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -802,5 +804,88 @@ func TestCollectFilesSingleFile(t *testing.T) {
 	}
 	if len(files) != 1 || files[0] != path {
 		t.Fatalf("files = %v, want [%s]", files, path)
+	}
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns
+// everything written there.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	fn()
+
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func TestRunList(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{docs: []store.Document{
+		{Path: "/notes/b.md", MTime: 1700000000, Chunks: []parser.Chunk{{Text: "x"}}},
+		{Path: "/notes/a.md", MTime: 1600000000, Chunks: []parser.Chunk{{Text: "y"}}},
+	}}
+
+	out := captureStdout(t, func() {
+		if err := Run([]string{"qazyna", "--store", "fake", "list"}, withFakeStore(&got, st)); err != nil {
+			t.Error(err)
+		}
+	})
+	if !strings.Contains(out, "/notes/a.md") || !strings.Contains(out, "/notes/b.md") {
+		t.Errorf("output misses indexed paths:\n%s", out)
+	}
+	if !strings.Contains(out, "2 files") {
+		t.Errorf("output misses the total:\n%s", out)
+	}
+	if strings.Index(out, "a.md") > strings.Index(out, "b.md") {
+		t.Errorf("paths are not sorted:\n%s", out)
+	}
+}
+
+func TestRunListJSON(t *testing.T) {
+	var got *config.Config
+	st := &fakeStore{docs: []store.Document{
+		{Path: "/notes/a.md", MTime: 1600000000, Chunks: []parser.Chunk{{Text: "y"}}},
+	}}
+
+	out := captureStdout(t, func() {
+		if err := Run([]string{"qazyna", "--store", "fake", "list", "--json"}, withFakeStore(&got, st)); err != nil {
+			t.Error(err)
+		}
+	})
+	var files []struct {
+		Path     string `json:"path"`
+		Modified string `json:"modified"`
+	}
+	if err := json.Unmarshal([]byte(out), &files); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if len(files) != 1 || files[0].Path != "/notes/a.md" {
+		t.Fatalf("files = %+v, want one /notes/a.md", files)
+	}
+	if files[0].Modified != "2020-09-13T12:26:40Z" {
+		t.Errorf("modified = %q, want RFC3339 of 1600000000", files[0].Modified)
+	}
+}
+
+func TestRunListEmpty(t *testing.T) {
+	var got *config.Config
+	out := captureStdout(t, func() {
+		if err := Run([]string{"qazyna", "--store", "fake", "list"}, withFakeStore(&got, &fakeStore{})); err != nil {
+			t.Error(err)
+		}
+	})
+	if !strings.Contains(out, "index is empty") {
+		t.Errorf("output = %q, want 'index is empty'", out)
 	}
 }

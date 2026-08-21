@@ -65,6 +65,12 @@ Indexing is incremental: unchanged files (by mtime) are skipped, files that
 vanished from the given directories are dropped from the index. `--force`
 re-indexes the given paths even when mtimes are unchanged.
 
+See what is in the index (`--json` for machine-readable output):
+
+```sh
+./bin/qazyna list
+```
+
 Search:
 
 ```sh

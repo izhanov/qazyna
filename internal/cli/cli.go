@@ -99,6 +99,14 @@ func Run(args []string, opts ...Option) error {
 				Action: app.flushAction,
 			},
 			{
+				Name:  "list",
+				Usage: "list indexed files",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "json", Usage: "machine-readable output"},
+				},
+				Action: app.listAction,
+			},
+			{
 				Name:      "search",
 				Usage:     "search the index by meaning",
 				ArgsUsage: "<query>",
@@ -439,6 +447,49 @@ func (a *App) mcpAction(ctx context.Context, cmd *cli.Command) error {
 		tools.IndexStatus(st),
 		tools.ListFiles(st),
 	)
+}
+
+func (a *App) listAction(ctx context.Context, cmd *cli.Command) error {
+	setupLogging(cmd)
+
+	st, err := a.openStore(ctx, newConfig(cmd))
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	known, err := st.Paths(ctx)
+	if err != nil {
+		return err
+	}
+	paths := slices.Sorted(maps.Keys(known))
+
+	if cmd.Bool("json") {
+		type indexedFile struct {
+			Path     string `json:"path"`
+			Modified string `json:"modified"`
+		}
+		files := make([]indexedFile, 0, len(paths))
+		for _, p := range paths {
+			files = append(files, indexedFile{
+				Path:     p,
+				Modified: time.Unix(known[p], 0).UTC().Format(time.RFC3339),
+			})
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(files)
+	}
+
+	if len(paths) == 0 {
+		fmt.Println("index is empty")
+		return nil
+	}
+	for _, p := range paths {
+		fmt.Printf("%s  %s\n", time.Unix(known[p], 0).Format("2006-01-02 15:04"), prettyPath(p))
+	}
+	fmt.Printf("%d files\n", len(paths))
+	return nil
 }
 
 func (a *App) flushAction(ctx context.Context, cmd *cli.Command) error {
