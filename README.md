@@ -82,8 +82,8 @@ vector` or `--mode text` selects a single half.
 
 `qazyna mcp` serves the index over the Model Context Protocol (stdio), so
 agents like Claude Code can search your files themselves. Read-only by
-design: two tools, `search_notes` and `index_status`; indexing stays with
-you in the terminal. To register in Claude Code:
+design: three tools — `search_notes`, `index_status` and `list_files`
+(what is indexed, with mtimes); indexing stays with you in the terminal. To register in Claude Code:
 
 ```sh
 claude mcp add qazyna -- qazyna mcp

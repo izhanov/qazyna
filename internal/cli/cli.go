@@ -437,6 +437,7 @@ func (a *App) mcpAction(ctx context.Context, cmd *cli.Command) error {
 	return mcpserver.Run(ctx,
 		tools.SearchNotes(st, emb),
 		tools.IndexStatus(st),
+		tools.ListFiles(st),
 	)
 }
 
