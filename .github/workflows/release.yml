@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin_arm64
+          - os: macos-13
+            platform: darwin_amd64
+          - os: ubuntu-latest
+            platform: linux_amd64
+          - os: ubuntu-24.04-arm
+            platform: linux_arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags needed for `git describe` version stamping
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cache LanceDB native libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            lib
+            include
+          key: lancedb-v0.1.2-tarball-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build
+        run: make build
+
+      - name: Package
+        run: tar -C bin -czf qazyna_${{ matrix.platform }}.tar.gz qazyna
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: qazyna_${{ matrix.platform }}.tar.gz

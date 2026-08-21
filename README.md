@@ -42,6 +42,20 @@ Install [Ollama for Windows](https://ollama.com/download/windows) and [Poppler](
 
 ## Installation
 
+### Quick install (prebuilt binary)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/izhanov/qazyna/main/install.sh | sh
+qazyna setup
+```
+
+`setup` finishes the job in one command: checks Ollama and pulls the
+embedding model, checks poppler, registers the MCP server in Claude Code and
+installs the agent skill. Anything it cannot do itself (like installing
+Ollama) becomes a printed hint — fix and re-run.
+
+### From source
+
 The LanceDB Go SDK works through CGO on top of a native library. The first
 `make build` downloads it automatically (into `lib/` and `include/`, not tracked
 by git) and then compiles the binary:

@@ -119,6 +119,11 @@ func Run(args []string, opts ...Option) error {
 				Action: app.searchAction,
 			},
 			{
+				Name:   "setup",
+				Usage:  "one-command setup: check Ollama, pull the model, register MCP in Claude Code, install the skill",
+				Action: app.setupAction,
+			},
+			{
 				Name:  "skill",
 				Usage: "manage the Claude Code skill that teaches AI agents to search with qazyna",
 				Commands: []*cli.Command{
