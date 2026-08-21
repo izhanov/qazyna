@@ -82,7 +82,9 @@ Search:
 By default the search is hybrid: a semantic (vector) and a lexical (exact
 words) lookup run concurrently and are fused with Reciprocal Rank Fusion, so
 both question-like queries and grep-style keyword lookups work. `--mode
-vector` or `--mode text` selects a single half.
+vector` or `--mode text` selects a single half. Each chunk is embedded
+together with its file name and heading trail, so queries mentioning either
+rank the right files higher.
 
 ### MCP server (search from AI agents)
 

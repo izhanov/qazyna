@@ -889,3 +889,32 @@ func TestRunListEmpty(t *testing.T) {
 		t.Errorf("output = %q, want 'index is empty'", out)
 	}
 }
+
+func TestEmbeddingText(t *testing.T) {
+	cases := []struct {
+		name  string
+		path  string
+		chunk parser.Chunk
+		want  string
+	}{
+		{
+			name:  "filename and section woven in",
+			path:  "/notes/content-style-guide.md",
+			chunk: parser.Chunk{Section: "Tone > Voice", Text: "be direct"},
+			want:  "content style guide\nTone > Voice\nbe direct",
+		},
+		{
+			name:  "no section",
+			path:  "/notes/llm_visibility_audit.pdf",
+			chunk: parser.Chunk{Text: "chapter one"},
+			want:  "llm visibility audit\nchapter one",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := embeddingText(tc.path, tc.chunk); got != tc.want {
+				t.Errorf("embeddingText = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

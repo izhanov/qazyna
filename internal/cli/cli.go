@@ -355,7 +355,7 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
-		texts[i] = c.Text
+		texts[i] = embeddingText(path, c)
 	}
 	t = time.Now()
 	vectors, err := emb.Embed(ctx, texts)
@@ -382,6 +382,23 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	}
 	slog.Debug("stored", "file", path, "took", time.Since(t).Round(time.Millisecond))
 	return chunks, nil
+}
+
+// embeddingText builds what the embedder sees for one chunk: the file name
+// and the heading trail woven in above the text, so a query mentioning
+// either still lands on the right vectors. The stored chunk text stays
+// untouched — this context never shows up in search output.
+func embeddingText(path string, c parser.Chunk) string {
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	name = strings.NewReplacer("-", " ", "_", " ").Replace(name)
+
+	parts := make([]string, 0, 3)
+	parts = append(parts, name)
+	if c.Section != "" {
+		parts = append(parts, c.Section)
+	}
+	parts = append(parts, c.Text)
+	return strings.Join(parts, "\n")
 }
 
 // underAnyRoot reports whether path lies under (or is) one of the roots.
