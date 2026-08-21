@@ -7,6 +7,14 @@ by meaning, not by substring.
 
 Supported formats: Markdown, PDF (text layer), XML, CSV/TSV, DOCX (Word documents). Planned: JPEG, PNG, video; .doc (legacy binary format).
 
+**Embeddings: Ollama only, for now.** Qazyna computes embeddings exclusively
+through a local [Ollama](https://ollama.com) server — no OpenAI, no cloud
+APIs, nothing leaves your machine. The default and tested model is
+[`bge-m3`](https://ollama.com/library/bge-m3) (multilingual, good for
+Cyrillic). Other Ollama embedding models can be selected with
+`--embed-model`, but `bge-m3` is what the project is developed against.
+Switching models requires a full `qazyna reindex`.
+
 ## Requirements
 
 - Go 1.26+
