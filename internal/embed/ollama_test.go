@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,46 @@ func TestOllamaEmbedConnectionRefused(t *testing.T) {
 	_, err := o.Embed(context.Background(), []string{"x"})
 	if err == nil || !strings.Contains(err.Error(), "ollama serve") {
 		t.Fatalf("err = %v, want hint about ollama serve", err)
+	}
+}
+
+func TestOllamaEmbedBatches(t *testing.T) {
+	var batchSizes []int
+	o := fakeOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		var req embedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		batchSizes = append(batchSizes, len(req.Input))
+		// Echo the text's ordinal back as the vector so the test can
+		// verify the batches are glued together in order.
+		vecs := make([][]float32, len(req.Input))
+		for i, text := range req.Input {
+			vecs[i] = []float32{float32(text[0])}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"embeddings": vecs})
+	})
+	o.batch = 3
+
+	texts := make([]string, 7)
+	for i := range texts {
+		texts[i] = string(rune('a' + i))
+	}
+	vecs, err := o.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []int{3, 3, 1}; !slices.Equal(batchSizes, want) {
+		t.Errorf("batch sizes = %v, want %v", batchSizes, want)
+	}
+	if len(vecs) != 7 {
+		t.Fatalf("got %d vectors, want 7", len(vecs))
+	}
+	for i, v := range vecs {
+		if v[0] != float32('a'+i) {
+			t.Errorf("vector %d = %v, out of order", i, v)
+		}
 	}
 }
 

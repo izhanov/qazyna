@@ -23,6 +23,7 @@ type Ollama struct {
 	timeout  time.Duration // per-request deadline
 	attempts int
 	backoff  time.Duration // first retry delay, doubles per attempt
+	batch    int           // max texts per request; Ollama's runner dies on huge inputs
 }
 
 // NewOllama creates a client for the given server URL and embedding model.
@@ -36,6 +37,7 @@ func NewOllama(baseURL, model string) *Ollama {
 		timeout:  5 * time.Minute,
 		attempts: 3,
 		backoff:  time.Second,
+		batch:    32,
 	}
 }
 
@@ -51,7 +53,23 @@ type embedResponse struct {
 	Error      string      `json:"error"`
 }
 
+// Embed slices texts into batches: a whole book in one request kills
+// Ollama's runner, and a failed retry then re-sends only the batch that
+// broke, not everything before it.
 func (o *Ollama) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	vectors := make([][]float32, 0, len(texts))
+	for start := 0; start < len(texts); start += o.batch {
+		batch := texts[start:min(start+o.batch, len(texts))]
+		vs, err := o.embedBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		vectors = append(vectors, vs...)
+	}
+	return vectors, nil
+}
+
+func (o *Ollama) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	var lastErr error
 	for attempt := range o.attempts {
 		if attempt > 0 {
