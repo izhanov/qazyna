@@ -65,8 +65,8 @@ func (DOCX) Parse(_ context.Context, path string) ([]Chunk, error) {
 // Minimal Word XML structure
 // Uses xml namespace "w" for Word elements
 type wordDocument struct {
-	XMLName xml.Name        `xml:"http://schemas.openxmlformats.org/wordprocessingml/2006/main document"`
-	Body    wordBody        `xml:"http://schemas.openxmlformats.org/wordprocessingml/2006/main body"`
+	XMLName xml.Name `xml:"http://schemas.openxmlformats.org/wordprocessingml/2006/main document"`
+	Body    wordBody `xml:"http://schemas.openxmlformats.org/wordprocessingml/2006/main body"`
 }
 
 type wordBody struct {

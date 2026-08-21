@@ -5,7 +5,7 @@ Files are split into chunks, each chunk gets an embedding computed locally (Olla
 and vectors are stored in [LanceDB](https://lancedb.com). Search is vector-based —
 by meaning, not by substring.
 
-Supported formats: Markdown, PDF (text layer), XML, CSV/TSV. Planned: JPEG, PNG, video.
+Supported formats: Markdown, PDF (text layer), XML, CSV/TSV, DOCX (Word documents). Planned: JPEG, PNG, video; .doc (legacy binary format).
 
 ## Requirements
 
@@ -144,5 +144,6 @@ internal/store/   Store interface + LanceDB implementation
 - [x] PDF parser (text layer via `pdftotext`; scanned PDFs need OCR, later)
 - [x] XML parser (subtree chunks, tag names become sections and labels)
 - [x] CSV/TSV parser (rows with headers woven in, packed up to chunk size)
+- [x] DOCX parser (Word documents with heading hierarchy)
 - [x] MCP server (`qazyna mcp`): read-only search for AI agents over stdio
-- [ ] Images (OCR/captioning), video
+- [ ] Images (OCR/captioning), video; .doc (legacy binary format)
