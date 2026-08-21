@@ -561,6 +561,31 @@ func TestRunIndexSkipsUnchangedFiles(t *testing.T) {
 	}
 }
 
+func TestRunIndexForceIgnoresMtime(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")
+
+	st := &fakeStore{}
+	if err := runIndexArgs(t, st, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second run with --force: file untouched, must be re-indexed anyway.
+	var got *config.Config
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", "--force", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.docs) != 2 {
+		t.Errorf("stored %d documents, want 2 (--force must bypass the mtime skip)", len(st.docs))
+	}
+}
+
 func TestRunIndexReindexesChangedFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.md")

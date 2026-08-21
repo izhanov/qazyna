@@ -73,7 +73,11 @@ func Run(args []string, opts ...Option) error {
 				Name:      "index",
 				Usage:     "index files and directories",
 				ArgsUsage: "<path> [<path>...]",
-				Action:    app.indexAction,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "force", Aliases: []string{"f"},
+						Usage: "re-index even unchanged files (skip the mtime check)"},
+				},
+				Action: app.indexAction,
 			},
 			{
 				Name:      "reindex",
@@ -151,14 +155,14 @@ func logLevel(quiet, verbose bool) slog.Level {
 }
 
 func (a *App) indexAction(ctx context.Context, cmd *cli.Command) error {
-	return a.runIndex(ctx, cmd, false)
+	return a.runIndex(ctx, cmd, false, cmd.Bool("force"))
 }
 
 func (a *App) reindexAction(ctx context.Context, cmd *cli.Command) error {
-	return a.runIndex(ctx, cmd, true)
+	return a.runIndex(ctx, cmd, true, false)
 }
 
-func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error {
+func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset, force bool) error {
 	setupLogging(cmd)
 	quiet := cmd.Bool("quiet")
 	start := time.Now()
@@ -203,13 +207,16 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset bool) error 
 	}
 
 	// Incremental indexing: an unchanged mtime means the file is skipped
-	// entirely — no parsing and, above all, no embedding.
+	// entirely — no parsing and, above all, no embedding. --force bypasses
+	// the check for files whose content changed without touching mtime.
 	var work []string
 	skipped := 0
 	for _, path := range files {
-		if info, err := os.Stat(path); err == nil && known[path] == info.ModTime().Unix() {
-			skipped++
-			continue
+		if !force {
+			if info, err := os.Stat(path); err == nil && known[path] == info.ModTime().Unix() {
+				skipped++
+				continue
+			}
 		}
 		work = append(work, path)
 	}

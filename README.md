@@ -61,6 +61,10 @@ Index files and directories (any mix, overlaps are deduplicated):
 ./bin/qazyna index ./notes ./docs README.md
 ```
 
+Indexing is incremental: unchanged files (by mtime) are skipped, files that
+vanished from the given directories are dropped from the index. `--force`
+re-indexes the given paths even when mtimes are unchanged.
+
 Search:
 
 ```sh
