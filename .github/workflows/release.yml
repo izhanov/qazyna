@@ -11,6 +11,8 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # linux_arm64 is absent: the lancedb-go v0.1.2 native tarball only
+      # ships darwin_amd64, darwin_arm64 and linux_amd64.
       matrix:
         include:
           - os: macos-14
@@ -19,8 +21,6 @@ jobs:
             platform: darwin_amd64
           - os: ubuntu-latest
             platform: linux_amd64
-          - os: ubuntu-24.04-arm
-            platform: linux_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
