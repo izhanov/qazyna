@@ -12,14 +12,33 @@ Supported formats: Markdown, PDF (text layer), XML, CSV/TSV, DOCX (Word document
 - Go 1.26+
 - macOS, Linux, or Windows (MinGW/Git Bash) — the `Makefile` detects the platform
   automatically, check it with `make platform-info`
-- Poppler for PDF parsing: `brew install poppler` (provides `pdftotext`)
+- Poppler for PDF parsing (provides `pdftotext`)
 - [Ollama](https://ollama.com) with an embedding model (default: `bge-m3` —
-  multilingual, works well for Cyrillic):
+  multilingual, works well for Cyrillic)
+
+### macOS
 
 ```sh
-brew install ollama
+brew install poppler ollama
 ollama pull bge-m3
+ollama serve  # run in background
 ```
+
+### Linux (Ubuntu/Debian)
+
+```sh
+# Poppler
+sudo apt-get update && sudo apt-get install -y poppler-utils
+
+# Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull bge-m3
+ollama serve  # run in background
+```
+
+### Windows
+
+Install [Ollama for Windows](https://ollama.com/download/windows) and [Poppler](https://github.com/oschwartz10612/poppler-windows/releases/) manually, or use WSL2 with the Linux instructions above.
 
 ## Installation
 
