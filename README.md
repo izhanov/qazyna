@@ -136,7 +136,8 @@ query *attracts* it. Use minus-operators or a path filter instead:
 ```
 
 Measure search quality against a golden set of `query → expected file`
-cases (see `docs/eval.md` and `evals/golden.yaml` for the format):
+cases. The golden file lives wherever you keep it — the command takes a
+path (see `docs/eval.md`, and `evals/golden.yaml` for the format):
 
 ```sh
 ./bin/qazyna eval evals/golden.yaml               # recall@5 and MRR
