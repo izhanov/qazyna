@@ -458,21 +458,44 @@ func (a *App) indexFile(ctx context.Context, path string, emb embed.Embedder, st
 	return chunks, nil
 }
 
-// embeddingText builds what the embedder sees for one chunk: the file name
-// and the heading trail woven in above the text, so a query mentioning
-// either still lands on the right vectors. The stored chunk text stays
-// untouched — this context never shows up in search output.
+// embeddingText builds what the embedder sees for one chunk: the telling
+// tail of the path and the heading trail woven in above the text, so a query
+// mentioning either still lands on the right vectors. The stored chunk text
+// stays untouched — this context never shows up in search output.
 func embeddingText(path string, c parser.Chunk) string {
-	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	name = strings.NewReplacer("-", " ", "_", " ").Replace(name)
-
 	parts := make([]string, 0, 3)
-	parts = append(parts, name)
+	parts = append(parts, pathWords(path))
 	if c.Section != "" {
 		parts = append(parts, c.Section)
 	}
 	parts = append(parts, c.Text)
 	return strings.Join(parts, "\n")
+}
+
+// pathWords turns the telling tail of a path into words: the file name plus
+// up to three enclosing directories, dashes and underscores split apart.
+// The base name alone is often degenerate — every agent skill is a SKILL.md
+// whose real name lives in its directory. Hidden directories and everything
+// from the home directory up are noise and are skipped.
+func pathWords(path string) string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if rel, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+			path = rel
+		}
+	}
+
+	dir, file := filepath.Split(path)
+	words := []string{strings.TrimSuffix(file, filepath.Ext(file))}
+	dirs := strings.Split(filepath.Clean(dir), string(filepath.Separator))
+	for i, kept := len(dirs)-1, 0; i >= 0 && kept < 3; i-- {
+		d := dirs[i]
+		if d == "" || d == "." || strings.HasPrefix(d, ".") {
+			continue
+		}
+		words = append([]string{d}, words...)
+		kept++
+	}
+	return strings.NewReplacer("-", " ", "_", " ").Replace(strings.Join(words, " "))
 }
 
 // underAnyRoot reports whether path lies under (or is) one of the roots.

@@ -918,16 +918,29 @@ func TestEmbeddingText(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "filename and section woven in",
+			name:  "path tail and section woven in",
 			path:  "/notes/content-style-guide.md",
 			chunk: parser.Chunk{Section: "Tone > Voice", Text: "be direct"},
-			want:  "content style guide\nTone > Voice\nbe direct",
+			want:  "notes content style guide\nTone > Voice\nbe direct",
 		},
 		{
 			name:  "no section",
 			path:  "/notes/llm_visibility_audit.pdf",
 			chunk: parser.Chunk{Text: "chapter one"},
-			want:  "llm visibility audit\nchapter one",
+			want:  "notes llm visibility audit\nchapter one",
+		},
+		{
+			name: "directory carries the name, hidden dirs skipped",
+			// Every agent skill is a SKILL.md; the telling name is kit-pr.
+			path:  "/w/uscreen_2/.claude/skills/kit-pr/SKILL.md",
+			chunk: parser.Chunk{Text: "open a draft PR"},
+			want:  "uscreen 2 skills kit pr SKILL\nopen a draft PR",
+		},
+		{
+			name:  "relative path",
+			path:  "docs/eval.md",
+			chunk: parser.Chunk{Text: "golden set"},
+			want:  "docs eval\ngolden set",
 		},
 	}
 	for _, tc := range cases {
