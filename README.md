@@ -136,11 +136,11 @@ query *attracts* it. Use minus-operators or a path filter instead:
 ```
 
 Measure search quality against a golden set of `query → expected file`
-cases (see `docs/eval.md` and `golden.yaml` for the format):
+cases (see `docs/eval.md` and `evals/golden.yaml` for the format):
 
 ```sh
-./bin/qazyna eval golden.yaml               # recall@5 and MRR
-./bin/qazyna eval --mode vector golden.yaml # each half separately
+./bin/qazyna eval evals/golden.yaml               # recall@5 and MRR
+./bin/qazyna eval --mode vector evals/golden.yaml # each half separately
 ```
 
 ### MCP server (search from AI agents)
