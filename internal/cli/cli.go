@@ -120,6 +120,16 @@ func Run(args []string, opts ...Option) error {
 				Action: app.searchAction,
 			},
 			{
+				Name:      "eval",
+				Usage:     "measure search quality against a golden set of query → expected-file cases",
+				ArgsUsage: "<golden.yaml>",
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "limit", Value: 5, Usage: "results per query; recall is measured at this depth"},
+					&cli.StringFlag{Name: "mode", Value: "hybrid", Usage: "search mode to evaluate: hybrid, vector or text"},
+				},
+				Action: app.evalAction,
+			},
+			{
 				Name:   "setup",
 				Usage:  "one-command setup: check Ollama, pull the model, register MCP in Claude Code, install the skill",
 				Action: app.setupAction,

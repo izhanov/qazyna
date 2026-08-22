@@ -127,6 +127,22 @@ vector` or `--mode text` selects a single half. Each chunk is embedded
 together with its file name and heading trail, so queries mentioning either
 rank the right files higher.
 
+Exclusions: embeddings cannot express "not about X" — mentioning X in a
+query *attracts* it. Use minus-operators or a path filter instead:
+
+```sh
+./bin/qazyna search 'improve search -"evil martians" -preprod'
+./bin/qazyna search --exclude-path uscreen "deploy process"
+```
+
+Measure search quality against a golden set of `query → expected file`
+cases (see `docs/eval.md` and `golden.yaml` for the format):
+
+```sh
+./bin/qazyna eval golden.yaml               # recall@5 and MRR
+./bin/qazyna eval --mode vector golden.yaml # each half separately
+```
+
 ### MCP server (search from AI agents)
 
 `qazyna mcp` serves the index over the Model Context Protocol (stdio), so
