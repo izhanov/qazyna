@@ -247,6 +247,41 @@ func TestLanceFullTextSearch(t *testing.T) {
 	}
 }
 
+func TestLanceSearchTextWholeWords(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if err := st.AddDocument(ctx, doc("a.md",
+		"prepare the approach for printing", // "pr" only as a substring
+		"push the branch and open draft PRs")); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := st.SearchText(ctx, "PR", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Text, "PRs") {
+		t.Fatalf("got %+v, want only the chunk with the whole word (PRs)", results)
+	}
+}
+
+func TestWordSet(t *testing.T) {
+	set := wordSet("Push the branch, open draft PRs (dry_run).")
+	for _, want := range []string{"push", "branch", "draft", "pr", "dry_run"} {
+		if !set[singular(want)] {
+			t.Errorf("wordSet lacks %q: %v", want, set)
+		}
+	}
+	if set["pr"] && set["prepare"] {
+		t.Error("unexpected words in set")
+	}
+
+	if singular("prs") != "pr" || singular("is") != "is" || singular("pass") != "pas" {
+		t.Errorf("singular: prs=%q is=%q pass=%q", singular("prs"), singular("is"), singular("pass"))
+	}
+}
+
 func TestQueryWords(t *testing.T) {
 	got := queryWords("Как горутины общаются между собой?")
 	want := []string{"горутины", "общаются"}

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/apache/arrow/go/v17/arrow"
 	"github.com/apache/arrow/go/v17/arrow/array"
@@ -211,7 +212,10 @@ func (l *Lance) SearchText(ctx context.Context, query string, limit int) ([]Sear
 	for i, w := range words {
 		conds[i] = fmt.Sprintf("text ILIKE '%%%s%%'", strings.ReplaceAll(w, "'", "''"))
 	}
-	fetch := 256 // candidates to score client-side
+	// The ILIKE prefilter is substring-based and over-matches wildly on short
+	// terms ("pr" is inside "prepare"), so the candidate pool must be large
+	// enough to not crowd out the real matches before word-level scoring.
+	fetch := 4096
 	rows, err := l.table.Select(ctx, contracts.QueryConfig{
 		Columns: []string{"id", "path", "section", "text"},
 		Where:   strings.Join(conds, " OR "),
@@ -224,12 +228,15 @@ func (l *Lance) SearchText(ctx context.Context, query string, limit int) ([]Sear
 	results := make([]SearchResult, 0, len(rows))
 	for _, row := range rows {
 		r := rowToResult(row)
-		lower := strings.ToLower(r.Text)
+		chunk := wordSet(r.Text)
 		matched := 0
 		for _, w := range words {
-			if strings.Contains(lower, w) {
+			if chunk[singular(w)] {
 				matched++
 			}
+		}
+		if matched == 0 {
+			continue // substring prefilter hit, but no whole word matches
 		}
 		r.Score = float64(matched) / float64(len(words))
 		results = append(results, r)
@@ -267,6 +274,29 @@ func queryWords(query string) []string {
 		words = append(words, w)
 	}
 	return words
+}
+
+// wordSet splits text into lowercase words (runs of letters and digits),
+// normalized to singular. Scoring on whole words instead of substrings keeps
+// a query term like "PR" from matching "prepare" or "approach".
+func wordSet(text string) map[string]bool {
+	set := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		// "_" stays a word character so identifiers like dry_run match whole.
+		return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		set[singular(w)] = true
+	}
+	return set
+}
+
+// singular folds a trivial English plural so "PR" matches "PRs". Both sides
+// of a comparison go through it, so equality is preserved.
+func singular(w string) string {
+	if len(w) >= 3 && strings.HasSuffix(w, "s") {
+		return w[:len(w)-1]
+	}
+	return w
 }
 
 func rowToResult(row map[string]interface{}) SearchResult {
