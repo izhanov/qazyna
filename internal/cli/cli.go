@@ -109,12 +109,13 @@ func Run(args []string, opts ...Option) error {
 			},
 			{
 				Name:      "search",
-				Usage:     "search the index by meaning",
+				Usage:     "search the index by meaning; -word and -\"a phrase\" inside the query exclude results containing them",
 				ArgsUsage: "<query>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "limit", Value: 5, Usage: "maximum number of results"},
 					&cli.BoolFlag{Name: "json", Usage: "machine-readable output"},
 					&cli.StringFlag{Name: "mode", Value: "hybrid", Usage: "search mode: hybrid, vector (by meaning) or text (by words)"},
+					&cli.StringSliceFlag{Name: "exclude-path", Usage: "drop results whose file path contains this fragment (repeatable)"},
 				},
 				Action: app.searchAction,
 			},
@@ -639,8 +640,9 @@ func (a *App) searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	results, err := search.Search(ctx, st, emb, query, search.Options{
-		Mode:  mode,
-		Limit: cmd.Int("limit"),
+		Mode:        mode,
+		Limit:       cmd.Int("limit"),
+		ExcludePath: cmd.StringSlice("exclude-path"),
 	})
 	if err != nil {
 		return err

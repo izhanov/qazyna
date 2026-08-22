@@ -13,9 +13,11 @@ import (
 )
 
 type searchNotesArgs struct {
-	Query string `json:"query" jsonschema:"What to look for. Full questions work well (semantic search), exact identifiers too (keyword search)."`
-	Limit int    `json:"limit,omitempty" jsonschema:"Maximum results to return, 1-50. Default 5."`
-	Mode  string `json:"mode,omitempty" jsonschema:"hybrid (default, recommended), vector (meaning only) or text (exact words only)."`
+	Query       string   `json:"query" jsonschema:"What to look for. Full questions work well (semantic search), exact identifiers too (keyword search)."`
+	Limit       int      `json:"limit,omitempty" jsonschema:"Maximum results to return, 1-50. Default 5."`
+	Mode        string   `json:"mode,omitempty" jsonschema:"hybrid (default, recommended), vector (meaning only) or text (exact words only)."`
+	Exclude     []string `json:"exclude,omitempty" jsonschema:"Drop chunks containing any of these words/phrases (case-insensitive). Use for 'not about X' intents: mentioning X in the query attracts it, this filter is the only way to keep it out."`
+	ExcludePath []string `json:"exclude_path,omitempty" jsonschema:"Drop results whose file path contains any of these fragments, e.g. a project directory name."`
 }
 
 // SearchNotes registers the search_notes tool: hybrid search over the
@@ -35,8 +37,10 @@ func SearchNotes(st store.Store, emb embed.Embedder) mcpserver.Option {
 			args.Limit = min(args.Limit, 50)
 
 			results, err := search.Search(ctx, st, emb, args.Query, search.Options{
-				Mode:  args.Mode,
-				Limit: args.Limit,
+				Mode:        args.Mode,
+				Limit:       args.Limit,
+				Exclude:     args.Exclude,
+				ExcludePath: args.ExcludePath,
 			})
 			if err != nil {
 				return nil, nil, err

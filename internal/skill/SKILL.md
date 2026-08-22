@@ -30,6 +30,11 @@ style guides, project docs, reference material):
    - `vector` — conceptual questions ("how does billing work")
    - `text` — exact identifiers, names, error strings
 
+   For "not about X" intents, never put the negation in the query text —
+   embeddings ignore "not" and mentioning X attracts it. Use the `exclude`
+   parameter (words/phrases to drop) or `exclude_path` (path fragments)
+   instead.
+
 3. **Map results to files.** Each hit returns a file path + Section trail
    (heading breadcrumb like "Install > macOS"). Path = what to read,
    Section = where in the file. Read only what search surfaced.
