@@ -130,6 +130,14 @@ func Run(args []string, opts ...Option) error {
 				Action: app.evalAction,
 			},
 			{
+				Name:  "update",
+				Usage: "update qazyna to the latest GitHub release and refresh the Claude Code skill",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "check", Usage: "only report whether a newer release exists"},
+				},
+				Action: app.updateAction,
+			},
+			{
 				Name:  "evals",
 				Usage: "show the golden sets and their cases; --edit opens them in $EDITOR",
 				Flags: []cli.Flag{

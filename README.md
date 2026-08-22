@@ -62,6 +62,16 @@ embedding model, checks poppler, registers the MCP server in Claude Code and
 installs the agent skill. Anything it cannot do itself (like installing
 Ollama) becomes a printed hint — fix and re-run.
 
+Updating to the newest release is built in — it also refreshes the Claude
+Code skill, which is versioned together with the binary:
+
+```sh
+qazyna update            # or: qazyna update --check
+```
+
+Source builds (`make install`) update via `make install`; `qazyna update`
+refuses to overwrite them.
+
 ### From source
 
 The LanceDB Go SDK works through CGO on top of a native library. The first
