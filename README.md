@@ -143,6 +143,8 @@ elsewhere. With no argument every set in that directory runs:
 ```sh
 ./bin/qazyna eval                             # recall@5 and MRR, all sets
 ./bin/qazyna eval --mode vector golden.yaml   # one file, one search half
+./bin/qazyna evals                            # show the sets and their cases
+./bin/qazyna evals --edit                     # open them in $EDITOR
 ```
 
 A golden set is a YAML list of cases; `expect` entries are file-level

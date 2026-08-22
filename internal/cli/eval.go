@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -103,6 +104,85 @@ func (a *App) evalAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	return nil
 }
+
+// evalsAction shows the golden sets: their files and cases. With --edit it
+// opens them in the user's editor instead, seeding a starter file when the
+// directory is still empty.
+func (a *App) evalsAction(_ context.Context, cmd *cli.Command) error {
+	setupLogging(cmd)
+	dir := newConfig(cmd).EvalsDir
+
+	if cmd.Bool("edit") {
+		return editEvals(dir)
+	}
+
+	files, err := goldenFiles(dir)
+	if err != nil {
+		return err
+	}
+
+	color := colorsEnabled()
+	for _, path := range files {
+		cases, err := loadGolden(path)
+		if err != nil {
+			// Show the broken file instead of aborting the listing: the whole
+			// point of this command is seeing what is there.
+			fmt.Printf("%s — %v\n\n", paint(color, "1", prettyPath(path)), err)
+			continue
+		}
+		fmt.Printf("%s (%d cases)\n", paint(color, "1", prettyPath(path)), len(cases))
+		for i, c := range cases {
+			fmt.Printf("%-2d %s\n   %s\n", i+1, snippet(c.Query, 70),
+				paint(color, "2", "→ "+strings.Join(c.Expect, ", ")))
+		}
+		fmt.Println()
+	}
+	return nil
+}
+
+// editEvals opens the golden sets in $VISUAL/$EDITOR: the single file when
+// there is one, the directory when there are several. An empty directory is
+// seeded with a commented starter file first.
+func editEvals(dir string) error {
+	files, err := goldenFiles(dir)
+	if err != nil {
+		seed := filepath.Join(dir, "golden.yaml")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(seed, []byte(goldenSeed), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("created starter golden set: %s\n", seed)
+		files = []string{seed}
+	}
+
+	target := dir
+	if len(files) == 1 {
+		target = files[0]
+	}
+
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		return fmt.Errorf("$EDITOR is not set — open %s yourself", target)
+	}
+
+	args := append(strings.Fields(editor), target)
+	ed := exec.Command(args[0], args[1:]...)
+	ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return ed.Run()
+}
+
+const goldenSeed = `# Golden sets for ` + "`qazyna eval`" + `: query → expected-file cases.
+# expect entries are file-level path suffixes: chunking changes don't
+# invalidate them. Add a case every time search performs poorly.
+#
+# - query: "how do I deploy to preprod"
+#   expect: ["skills/deploy/SKILL.md"]
+`
 
 // goldenFiles lists the golden sets in the evals directory, sorted.
 func goldenFiles(dir string) ([]string, error) {

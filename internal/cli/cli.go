@@ -130,6 +130,14 @@ func Run(args []string, opts ...Option) error {
 				Action: app.evalAction,
 			},
 			{
+				Name:  "evals",
+				Usage: "show the golden sets and their cases; --edit opens them in $EDITOR",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "edit", Usage: "open the golden sets in $VISUAL/$EDITOR, seeding a starter file if none exist"},
+				},
+				Action: app.evalsAction,
+			},
+			{
 				Name:   "setup",
 				Usage:  "one-command setup: check Ollama, pull the model, register MCP in Claude Code, install the skill",
 				Action: app.setupAction,

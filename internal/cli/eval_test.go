@@ -51,6 +51,33 @@ func TestGoldenFiles(t *testing.T) {
 	}
 }
 
+func TestEditEvalsSeedsEmptyDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "evals")
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "true") // /usr/bin/true: exits immediately
+
+	if err := editEvals(dir); err != nil {
+		t.Fatal(err)
+	}
+	seed := filepath.Join(dir, "golden.yaml")
+	if _, err := os.Stat(seed); err != nil {
+		t.Fatalf("starter file not created: %v", err)
+	}
+}
+
+func TestEditEvalsNoEditor(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "g.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+
+	if err := editEvals(dir); err == nil {
+		t.Fatal("expected error when $EDITOR is not set")
+	}
+}
+
 func TestLoadGolden(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "golden.yaml")
 	good := "- query: \"q\"\n  expect: [\"a.md\"]\n"
