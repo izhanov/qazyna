@@ -7,9 +7,10 @@ Russian version: [eval.md](eval.md).
 
 ## Golden set
 
-A file of 15–20 "query → expected file" cases. It lives wherever the user
-chooses — the command takes a path; this repo keeps its starting set in
-`evals/golden.yaml`:
+A file of 15–20 "query → expected file" cases. Golden sets live next to
+the index (`~/.local/share/qazyna/evals`); another directory is set with
+`--evals` or `QAZYNA_EVALS`. They are the user's personal data and are
+not kept in the qazyna repo:
 
 ```yaml
 - query: "что мы должны сделать чтобы подготовить тикет для деплоя?"
@@ -36,7 +37,10 @@ Rules:
   1st leaves recall unchanged but lifts MRR from 0.2 to 1.0. This is the
   metric that will show the effect of query decomposition and a reranker.
 
-## Harness: `qazyna eval <golden.yaml>`
+## Harness: `qazyna eval [golden.yaml ...]`
+
+With no arguments it runs every `*.yaml` in the evals directory; with
+paths, only the given files.
 
 A subcommand, not a Go test: it needs a live index and Ollama — semantic
 quality cannot be measured with the fake embedder. The command walks the

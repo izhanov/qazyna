@@ -121,8 +121,8 @@ func Run(args []string, opts ...Option) error {
 			},
 			{
 				Name:      "eval",
-				Usage:     "measure search quality against a golden set of query → expected-file cases",
-				ArgsUsage: "<golden.yaml>",
+				Usage:     "measure search quality against golden sets of query → expected-file cases; no argument runs every set in the evals directory",
+				ArgsUsage: "[golden.yaml ...]",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "limit", Value: 5, Usage: "results per query; recall is measured at this depth"},
 					&cli.StringFlag{Name: "mode", Value: "hybrid", Usage: "search mode to evaluate: hybrid, vector or text"},

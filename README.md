@@ -135,13 +135,14 @@ query *attracts* it. Use minus-operators or a path filter instead:
 ./bin/qazyna search --exclude-path uscreen "deploy process"
 ```
 
-Measure search quality against a golden set of `query → expected file`
-cases. The golden file lives wherever you keep it — the command takes a
-path (see `docs/eval.md`, and `evals/golden.yaml` for the format):
+Measure search quality against golden sets of `query → expected file`
+cases (see `docs/eval.md` for the format). Golden sets live next to the
+database (`~/.local/share/qazyna/evals`); `--evals` or `QAZYNA_EVALS`
+points elsewhere. With no argument every set in that directory runs:
 
 ```sh
-./bin/qazyna eval evals/golden.yaml               # recall@5 and MRR
-./bin/qazyna eval --mode vector evals/golden.yaml # each half separately
+./bin/qazyna eval                             # recall@5 and MRR, all sets
+./bin/qazyna eval --mode vector golden.yaml   # one file, one search half
 ```
 
 ### MCP server (search from AI agents)

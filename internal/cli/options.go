@@ -78,6 +78,8 @@ func flags() []cli.Flag {
 			Sources: cli.EnvVars("QAZYNA_OLLAMA_URL")},
 		&cli.StringFlag{Name: "embed-model", Value: "bge-m3", Usage: "Ollama embedding model",
 			Sources: cli.EnvVars("QAZYNA_EMBED_MODEL")},
+		&cli.StringFlag{Name: "evals", Value: config.DefaultEvalsDir(), Usage: "directory with golden-set files for `qazyna eval`",
+			Sources: cli.EnvVars("QAZYNA_EVALS")},
 		&cli.BoolFlag{Name: "fresh-reads", Value: true,
 			Usage:   "re-open the table on every read to see writes from other processes",
 			Sources: cli.EnvVars("QAZYNA_FRESH_READS")},
@@ -91,6 +93,7 @@ func newConfig(cmd *cli.Command) *config.Config {
 		EmbedderName: cmd.String("embedder"),
 		OllamaURL:    cmd.String("ollama-url"),
 		EmbedModel:   cmd.String("embed-model"),
+		EvalsDir:     cmd.String("evals"),
 		FreshReads:   cmd.Bool("fresh-reads"),
 	}
 }

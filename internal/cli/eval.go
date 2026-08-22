@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -22,25 +24,25 @@ type evalCase struct {
 	Expect []string `yaml:"expect"`
 }
 
-// evalAction runs the golden set against the live index and reports
+// evalAction runs golden sets against the live index and reports
 // recall@limit (an expected file made the top results) and MRR (mean of
-// 1/rank of the first correct file, 0 for a miss).
+// 1/rank of the first correct file, 0 for a miss). With no argument it runs
+// every set in the evals directory (--evals, next to the database by default).
 func (a *App) evalAction(ctx context.Context, cmd *cli.Command) error {
 	setupLogging(cmd)
 
-	path := cmd.Args().First()
-	if path == "" {
-		return fmt.Errorf("usage: qazyna eval <golden.yaml>")
-	}
-	cases, err := loadGolden(path)
-	if err != nil {
-		return err
+	cfg := newConfig(cmd)
+	files := cmd.Args().Slice()
+	if len(files) == 0 {
+		var err error
+		if files, err = goldenFiles(cfg.EvalsDir); err != nil {
+			return err
+		}
 	}
 
 	mode := cmd.String("mode")
 	limit := cmd.Int("limit")
 
-	cfg := newConfig(cmd)
 	st, err := a.openStore(ctx, cfg)
 	if err != nil {
 		return err
@@ -55,30 +57,69 @@ func (a *App) evalAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	color := colorsEnabled()
-	hits := 0
-	mrr := 0.0
-	for i, c := range cases {
-		results, err := search.Search(ctx, st, emb, c.Query, search.Options{Mode: mode, Limit: limit})
+	totalHits, totalCases := 0, 0
+	totalMRR := 0.0
+	for _, path := range files {
+		cases, err := loadGolden(path)
 		if err != nil {
-			return fmt.Errorf("case %d (%q): %w", i+1, c.Query, err)
+			return err
+		}
+		if len(files) > 1 {
+			fmt.Printf("%s\n", paint(color, "1", prettyPath(path)))
 		}
 
-		rank, found := firstExpectedRank(results, c.Expect)
-		if rank > 0 {
-			hits++
-			mrr += 1.0 / float64(rank)
-			fmt.Printf("%-2d %s  %s\n", i+1, paint(color, "32", fmt.Sprintf("hit@%d", rank)), snippet(c.Query, 60))
-			fmt.Printf("          %s\n", paint(color, "2", prettyPath(found)))
-		} else {
-			fmt.Printf("%-2d %s   %s\n", i+1, paint(color, "31", "miss"), snippet(c.Query, 60))
-			fmt.Printf("          %s\n", paint(color, "2", "want "+strings.Join(c.Expect, ", ")))
+		hits := 0
+		mrr := 0.0
+		for i, c := range cases {
+			results, err := search.Search(ctx, st, emb, c.Query, search.Options{Mode: mode, Limit: limit})
+			if err != nil {
+				return fmt.Errorf("%s case %d (%q): %w", path, i+1, c.Query, err)
+			}
+
+			rank, found := firstExpectedRank(results, c.Expect)
+			if rank > 0 {
+				hits++
+				mrr += 1.0 / float64(rank)
+				fmt.Printf("%-2d %s  %s\n", i+1, paint(color, "32", fmt.Sprintf("hit@%d", rank)), snippet(c.Query, 60))
+				fmt.Printf("          %s\n", paint(color, "2", prettyPath(found)))
+			} else {
+				fmt.Printf("%-2d %s   %s\n", i+1, paint(color, "31", "miss"), snippet(c.Query, 60))
+				fmt.Printf("          %s\n", paint(color, "2", "want "+strings.Join(c.Expect, ", ")))
+			}
 		}
+
+		n := len(cases)
+		fmt.Printf("\nrecall@%d %.2f (%d/%d)   MRR %.3f   mode=%s\n\n",
+			limit, float64(hits)/float64(n), hits, n, mrr/float64(n), mode)
+		totalHits += hits
+		totalCases += n
+		totalMRR += mrr
 	}
 
-	n := len(cases)
-	fmt.Printf("\nrecall@%d %.2f (%d/%d)   MRR %.3f   mode=%s\n",
-		limit, float64(hits)/float64(n), hits, n, mrr/float64(n), mode)
+	if len(files) > 1 {
+		fmt.Printf("overall: recall@%d %.2f (%d/%d)   MRR %.3f\n",
+			limit, float64(totalHits)/float64(totalCases), totalHits, totalCases,
+			totalMRR/float64(totalCases))
+	}
 	return nil
+}
+
+// goldenFiles lists the golden sets in the evals directory, sorted.
+func goldenFiles(dir string) ([]string, error) {
+	var files []string
+	for _, pattern := range []string{"*.yaml", "*.yml"} {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, matches...)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no golden sets (*.yaml) in %s — put one there, "+
+			"point --evals (or QAZYNA_EVALS) at your directory, or pass a file: qazyna eval <golden.yaml>", dir)
+	}
+	slices.Sort(files)
+	return files, nil
 }
 
 func loadGolden(path string) ([]evalCase, error) {

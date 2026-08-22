@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"qazyna/internal/store"
@@ -25,6 +26,28 @@ func TestFirstExpectedRank(t *testing.T) {
 	// eval.md must not match eval.en.md: suffix match is exact.
 	if rank, _ := firstExpectedRank([]store.SearchResult{{Path: "/d/eval.en.md"}}, []string{"eval.md"}); rank != 0 {
 		t.Error("eval.md matched eval.en.md")
+	}
+}
+
+func TestGoldenFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"b.yaml", "a.yml", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := goldenFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "a.yml"), filepath.Join(dir, "b.yaml")}
+	if !slices.Equal(files, want) {
+		t.Errorf("goldenFiles = %v, want %v", files, want)
+	}
+
+	if _, err := goldenFiles(t.TempDir()); err == nil {
+		t.Error("empty evals dir: expected error")
 	}
 }
 

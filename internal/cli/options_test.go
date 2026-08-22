@@ -119,6 +119,7 @@ func TestNewConfigDefaults(t *testing.T) {
 		EmbedderName: "fake", // overridden by the flag
 		OllamaURL:    "http://localhost:11434",
 		EmbedModel:   "bge-m3",
+		EvalsDir:     config.DefaultEvalsDir(),
 		FreshReads:   true,
 	}
 	if *got != want {
