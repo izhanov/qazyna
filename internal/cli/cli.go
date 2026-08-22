@@ -269,10 +269,6 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset, force bool)
 	if err != nil {
 		return err
 	}
-	if len(files) == 0 {
-		return fmt.Errorf("no supported files found in %s", strings.Join(roots, ", "))
-	}
-
 	known, err := st.Paths(ctx)
 	if err != nil {
 		return err
@@ -314,6 +310,12 @@ func (a *App) runIndex(ctx context.Context, cmd *cli.Command, reset, force bool)
 
 	files = work
 	if len(files) == 0 {
+		// An empty directory still gets its vanished files cleaned up above;
+		// error only when the run had nothing to index AND nothing to remove,
+		// which usually means a mistyped path.
+		if skipped == 0 && removed == 0 {
+			return fmt.Errorf("no supported files found in %s", strings.Join(roots, ", "))
+		}
 		fmt.Printf("nothing to do: %d files unchanged, %d stale removed\n", skipped, removed)
 		return nil
 	}

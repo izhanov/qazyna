@@ -228,6 +228,26 @@ func TestRunIndexNoSupportedFiles(t *testing.T) {
 	}
 }
 
+func TestRunIndexEmptyDirStillRemovesVanished(t *testing.T) {
+	dir := t.TempDir()
+	st := &fakeStore{docs: []store.Document{{Path: filepath.Join(dir, "gone.md"), MTime: 1}}}
+	st.meta = map[string]string{"embedder": "fake/32"}
+
+	var got *config.Config
+	err := Run(
+		[]string{"qazyna", "--store", "fake", "--embedder", "fake", "index", dir},
+		WithDefaultParsers(),
+		WithFakeEmbedder(),
+		withFakeStore(&got, st),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{filepath.Join(dir, "gone.md")}; !slices.Equal(st.deleted, want) {
+		t.Errorf("deleted = %v, want %v", st.deleted, want)
+	}
+}
+
 func TestRunIndexStampsEmbedderMeta(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "a.md"), "hello\n")

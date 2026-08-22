@@ -136,13 +136,21 @@ query *attracts* it. Use minus-operators or a path filter instead:
 ```
 
 Measure search quality against golden sets of `query → expected file`
-cases (see `docs/eval.md` for the format). Golden sets live next to the
-database (`~/.local/share/qazyna/evals`); `--evals` or `QAZYNA_EVALS`
-points elsewhere. With no argument every set in that directory runs:
+cases. Golden sets live next to the database
+(`~/.local/share/qazyna/evals`); `--evals` or `QAZYNA_EVALS` points
+elsewhere. With no argument every set in that directory runs:
 
 ```sh
 ./bin/qazyna eval                             # recall@5 and MRR, all sets
 ./bin/qazyna eval --mode vector golden.yaml   # one file, one search half
+```
+
+A golden set is a YAML list of cases; `expect` entries are file-level
+path suffixes, so chunking changes don't invalidate the set:
+
+```yaml
+- query: "how do I deploy to preprod"
+  expect: ["skills/deploy/SKILL.md"]
 ```
 
 ### MCP server (search from AI agents)
